@@ -2,9 +2,11 @@
 
 单账号 Claude 工作空间：完整指纹浏览器 + 官方原生 Claude Code，共用一份全局代理。主要交付 Windows 11 x64，增加 macOS 支持。Claude 桌面版预留“正在开发中”。
 
-新版修复正在云端验证：内核和 Windows WebView2 直接随 ZIP，浏览器恢复上次标签与对话；代理支持一键粘贴、真实地区/耗时与具体失败原因。Code 正常原生安装，不再需要 WSL2、虚拟机或沙箱。
+**[v0.3.0-dev.1 已发布](https://github.com/yingziseo/claudeFF/releases/tag/v0.3.0-dev.1)**，真实 Windows 客户端代理/内核及 Mac 原生 Code 云测通过：内核和 Windows WebView2 直接随 ZIP，浏览器恢复上次标签与对话；代理支持一键粘贴、真实地区/耗时与具体失败原因。Code 正常原生安装，不再需要 WSL2、虚拟机或沙箱。
 
-- [网页设计预览](https://yingziseo.github.io/claudeFF/)（示例数据，更新以云端部署为准）
+- [Windows 完整 ZIP](https://github.com/yingziseo/claudeFF/releases/download/v0.3.0-dev.1/claudeFF-windows-x64.zip)（约 491 MiB）
+- [Mac ARM / Intel 下载](https://github.com/yingziseo/claudeFF/releases/tag/v0.3.0-dev.1)（Intel 当前仅 Code）
+- [网页设计预览](https://yingziseo.github.io/claudeFF/)（示例数据）
 - [开发计划](docs/claudeFF开发项目计划.md) / [真实进度与下载](docs/开发进度与验证报告.md)
 - [Windows 说明](docs/Windows运行说明.md) / [macOS 说明](docs/macOS运行说明.md)
 - [协作规则](AGENTS.md) / [工作日志](工作日志.md) / [依赖来源](docs/第三方许可与来源.md)
