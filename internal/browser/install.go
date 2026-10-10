@@ -71,6 +71,9 @@ func Install(ctx context.Context, client *http.Client, root string) (string, err
 func Find(root string) string {
 	var result string
 	filepath.WalkDir(root, func(p string, d os.DirEntry, e error) error {
+		if e == nil && d.IsDir() && strings.HasPrefix(d.Name(), ".download-") {
+			return filepath.SkipDir
+		}
 		if e == nil && !d.IsDir() && strings.EqualFold(d.Name(), "chrome.exe") {
 			result = p
 			return filepath.SkipAll

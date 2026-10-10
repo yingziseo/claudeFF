@@ -86,3 +86,42 @@ func TestClientRejectsInsecureEndpoint(t *testing.T) {
 		t.Fatal("credentials embedded in URL")
 	}
 }
+func TestSessionExpiryAndLogout(t *testing.T) {
+	s, e := Open(filepath.Join(t.TempDir(), "license.db"), strings.Repeat("admin-fixture", 3))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.DB.Close()
+	now := time.Now().UTC()
+	s.Now = func() time.Time { return now }
+	s.DB.Exec("INSERT INTO cards(hash,label,created) VALUES(?,?,?)", hash("test-card"), "test", now.Format(time.RFC3339))
+	request := func(path, token, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		return w
+	}
+	w := request("/v1/register", "", `{"Username":"testuser","Password":"test-password","Card":"test-card"}`)
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	var session struct{ Token string }
+	json.Unmarshal(w.Body.Bytes(), &session)
+	if request("/v1/login", "", `{"Username":"testuser","Password":"wrong"}`).Code != 401 {
+		t.Fatal("bad password accepted")
+	}
+	request("/v1/logout", session.Token, `{}`)
+	if request("/v1/heartbeat", session.Token, `{}`).Code != 403 {
+		t.Fatal("logout ignored")
+	}
+	w = request("/v1/login", "", `{"Username":"testuser","Password":"test-password"}`)
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	json.Unmarshal(w.Body.Bytes(), &session)
+	now = now.Add(15 * 24 * time.Hour)
+	if request("/v1/heartbeat", session.Token, `{}`).Code != 403 {
+		t.Fatal("expired session accepted")
+	}
+}

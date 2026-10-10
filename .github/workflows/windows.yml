@@ -2,7 +2,7 @@ name: Windows portable client
 on:
   push:
     branches: [main]
-    paths: ['*.go', 'go.*', 'wails.json', 'internal/**', 'cmd/**', 'scripts/**', 'frontend/**', '.github/workflows/windows.yml']
+    paths: ['*.go', 'go.*', 'wails.json', 'build/appicon.png', 'internal/**', 'cmd/**', 'scripts/**', 'frontend/**', '.github/workflows/windows.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
-          cache: false
+          cache: true
       - run: go mod tidy
       - run: go build -trimpath -o sandbox/wsl-agent ./cmd/wsl-agent
       - run: cp scripts/sandbox/*.sh sandbox/
@@ -37,14 +37,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
-          cache: false
+          cache: true
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm install --package-lock-only --ignore-scripts
-        working-directory: frontend
       - run: npm ci
         working-directory: frontend
       - run: npm run build

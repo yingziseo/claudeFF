@@ -9,5 +9,10 @@ import (
 
 func hide(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true} }
 func Enable() error {
-	return exec.Command("powershell.exe", "-NoProfile", "-Command", `Start-Process wsl.exe -Verb RunAs -ArgumentList '--install','--no-distribution'`).Start()
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", `Start-Process wsl.exe -Verb RunAs -ArgumentList '--install','--no-distribution'`)
+	if e := cmd.Start(); e != nil {
+		return e
+	}
+	go cmd.Wait()
+	return nil
 }

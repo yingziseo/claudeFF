@@ -486,6 +486,12 @@ func (a *App) checkLicense() {
 	}
 	a.authMu.Unlock()
 	if same && e != nil {
+		a.mu.Lock()
+		cancel := a.cancelInstall
+		a.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
 		a.browser.Stop()
 		a.code.Stop()
 	}

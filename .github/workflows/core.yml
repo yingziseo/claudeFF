@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
-          cache: false
+          cache: true
       - name: Resolve initial module lock in cloud
         run: go mod tidy
       - name: Format and test core
