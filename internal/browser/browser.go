@@ -53,14 +53,16 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 		}
 		return chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error { return page.BringToFront().Do(c) }))
 	}
-	m.status = model.Status{Phase: "busy", Message: "正在启动并核验浏览器出口"}
-	m.mu.Unlock()
 	if exe == "" {
+		m.mu.Unlock()
 		return errors.New("请先下载浏览器内核")
 	}
 	if expected == nil {
+		m.mu.Unlock()
 		return errors.New("请先检测全局代理")
 	}
+	m.status = model.Status{Phase: "busy", Message: "正在启动并核验浏览器出口"}
+	m.mu.Unlock()
 	dataDir := filepath.Join(root, "browser-profile")
 	if e := os.MkdirAll(dataDir, 0700); e != nil {
 		return e

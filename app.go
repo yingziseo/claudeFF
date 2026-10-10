@@ -25,20 +25,22 @@ var releaseMode = "development"
 var licenseURL = ""
 
 type App struct {
-	authMu        sync.Mutex
-	licensed      bool
-	license       *licensing.Client
-	ctx           context.Context
-	root, bundle  string
-	db            *store.Store
-	browser       browser.Manager
-	code          *sandbox.Manager
-	relay         *proxy.Relay
-	network       model.Status
-	mu            sync.Mutex
-	operation     sync.Mutex
-	initErr       error
-	cancelInstall context.CancelFunc
+	authMu         sync.Mutex
+	businessCtx    context.Context
+	businessCancel context.CancelFunc
+	licensed       bool
+	license        *licensing.Client
+	ctx            context.Context
+	root, bundle   string
+	db             *store.Store
+	browser        browser.Manager
+	code           *sandbox.Manager
+	relay          *proxy.Relay
+	network        model.Status
+	mu             sync.Mutex
+	operation      sync.Mutex
+	initErr        error
+	cancelInstall  context.CancelFunc
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -71,6 +73,11 @@ func (a *App) startup(ctx context.Context) {
 
 }
 func (a *App) shutdown(ctx context.Context) {
+	a.authMu.Lock()
+	if a.businessCancel != nil {
+		a.businessCancel()
+	}
+	a.authMu.Unlock()
 	a.browser.Stop()
 	if a.code != nil {
 		a.code.Stop()
@@ -152,7 +159,7 @@ func (a *App) snapshot() (string, error) {
 	}{s, observed})
 	return string(raw), e
 }
-func (a *App) check() error {
+func (a *App) check(parent context.Context) error {
 	p, rev, e := a.db.Proxy()
 	if e != nil {
 		return e
@@ -160,7 +167,7 @@ func (a *App) check() error {
 	a.mu.Lock()
 	a.network = model.Status{Phase: "busy", Message: "正在通过全局代理检测出口"}
 	a.mu.Unlock()
-	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 25*time.Second)
 	defer cancel()
 	o, e := proxy.Detect(ctx, p, rev)
 	a.mu.Lock()
@@ -244,6 +251,9 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	if action == "auth.logout" {
 		a.authMu.Lock()
 		a.licensed = false
+		if a.businessCancel != nil {
+			a.businessCancel()
+		}
 		if a.license != nil {
 			var result map[string]any
 			a.license.Request(a.ctx, "/v1/logout", struct{}{}, &result)
@@ -261,6 +271,15 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	if !allowed {
 		return "", errors.New("请先登录并激活产品授权")
 	}
+	a.authMu.Lock()
+	if a.businessCtx == nil || a.businessCtx.Err() != nil {
+		a.businessCtx, a.businessCancel = context.WithCancel(a.ctx)
+	}
+	businessCtx := a.businessCtx
+	if releaseMode == "production" && !a.licensed {
+		a.businessCancel()
+	}
+	a.authMu.Unlock()
 
 	if action == "terminal.write" {
 		var p struct {
@@ -323,16 +342,16 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		a.network = model.Status{Phase: "idle", Message: "配置已更新，请重新检测"}
 		a.mu.Unlock()
 	case "proxy.check":
-		e = a.check()
+		e = a.check(businessCtx)
 	case "kernel.install":
 		if e = a.relayReady(); e != nil {
 			break
 		}
 		client := proxy.ClientThrough(a.relay.URL())
 		client.Timeout = 20 * time.Minute
-		_, e = browser.Install(a.ctx, client, filepath.Join(a.root, "kernel"))
+		_, e = browser.Install(businessCtx, client, filepath.Join(a.root, "kernel"))
 	case "browser.start":
-		if e = a.check(); e != nil {
+		if e = a.check(businessCtx); e != nil {
 			break
 		}
 		var o *model.Observation
@@ -348,7 +367,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		if e != nil {
 			break
 		}
-		e = a.browser.Start(a.ctx, browser.Find(filepath.Join(a.root, "kernel")), a.root, a.relay.URL(), *p, o)
+		e = a.browser.Start(businessCtx, browser.Find(filepath.Join(a.root, "kernel")), a.root, a.relay.URL(), *p, o)
 	case "browser.stop":
 		a.browser.Stop()
 	case "profile.save":
@@ -373,13 +392,13 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		p.Revision++
 		e = a.db.SaveProfile(*p)
 	case "code.install":
-		installCtx, cancel := context.WithTimeout(a.ctx, 25*time.Minute)
+		installCtx, cancel := context.WithTimeout(businessCtx, 25*time.Minute)
 		defer cancel()
 		a.mu.Lock()
 		a.cancelInstall = cancel
 		a.mu.Unlock()
 		defer func() { a.mu.Lock(); a.cancelInstall = nil; a.mu.Unlock() }()
-		if e = a.check(); e != nil {
+		if e = a.check(businessCtx); e != nil {
 			break
 		}
 		var o *model.Observation
@@ -437,7 +456,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 			e = errors.New("请先完成 Code 安装")
 			break
 		}
-		if e = a.check(); e != nil {
+		if e = a.check(businessCtx); e != nil {
 			break
 		}
 		var o *model.Observation
@@ -456,7 +475,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		if e != nil {
 			break
 		}
-		e = a.code.Launch(a.ctx, "run", pc, *p, o)
+		e = a.code.Launch(businessCtx, "run", pc, *p, o)
 	case "project.choose":
 		if e = a.stopped(); e != nil {
 			break
@@ -468,7 +487,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		var path string
 		path, e = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择导入到隔离系统的项目（源目录不会被改写）"})
 		if e == nil && path != "" {
-			e = a.code.ChooseProject(a.ctx, path)
+			e = a.code.ChooseProject(businessCtx, path)
 		}
 	case "data.open":
 		e = exec.Command("explorer.exe", a.root).Start()
@@ -506,6 +525,9 @@ func (a *App) checkLicense() {
 	same := a.license != nil && a.license.Token == client.Token
 	if same {
 		a.licensed = e == nil
+		if e != nil && a.businessCancel != nil {
+			a.businessCancel()
+		}
 	}
 	a.authMu.Unlock()
 	if same && e != nil {
