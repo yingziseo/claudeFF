@@ -81,14 +81,16 @@ type Status struct {
 	Observation *Observation `json:"observation,omitempty"`
 }
 type Snapshot struct {
-	Proxy       Proxy    `json:"proxy"`
-	HasPassword bool     `json:"hasPassword"`
-	Revision    int      `json:"revision"`
-	Profile     *Profile `json:"profile,omitempty"`
-	Browser     Status   `json:"browser"`
-	Code        Status   `json:"code"`
-	Network     Status   `json:"network"`
-	Kernel      bool     `json:"kernel"`
-	Native      bool     `json:"native"`
-	DataDir     string   `json:"dataDir"`
+	AuthRequired bool     `json:"authRequired"`
+	Authorized   bool     `json:"authorized"`
+	Proxy        Proxy    `json:"proxy"`
+	HasPassword  bool     `json:"hasPassword"`
+	Revision     int      `json:"revision"`
+	Profile      *Profile `json:"profile,omitempty"`
+	Browser      Status   `json:"browser"`
+	Code         Status   `json:"code"`
+	Network      Status   `json:"network"`
+	Kernel       bool     `json:"kernel"`
+	Native       bool     `json:"native"`
+	DataDir      string   `json:"dataDir"`
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/yingziseo/claudeFF/internal/browser"
+	"github.com/yingziseo/claudeFF/internal/licensing"
 	"github.com/yingziseo/claudeFF/internal/model"
 	"github.com/yingziseo/claudeFF/internal/proxy"
 	"github.com/yingziseo/claudeFF/internal/sandbox"
@@ -20,7 +21,13 @@ import (
 	"time"
 )
 
+var releaseMode = "development"
+var licenseURL = ""
+
 type App struct {
+	authMu        sync.Mutex
+	licensed      bool
+	license       *licensing.Client
 	ctx           context.Context
 	root, bundle  string
 	db            *store.Store
@@ -53,6 +60,15 @@ func (a *App) startup(ctx context.Context) {
 	if a.code.Installed() {
 		a.code.RestoreReady()
 	}
+	if releaseMode == "production" {
+		token, _ := a.db.LicenseToken()
+		a.license, _ = licensing.NewClient(licenseURL, token)
+		if a.license != nil && token != "" {
+			a.licensed = a.license.Verify(a.ctx, false, false) == nil
+		}
+		go a.licenseMonitor()
+	}
+
 }
 func (a *App) shutdown(ctx context.Context) {
 	a.browser.Stop()
@@ -86,6 +102,13 @@ func (a *App) snapshot() (string, error) {
 	if a.initErr != nil {
 		return "", errors.New("本地数据初始化失败，请检查目录权限")
 	}
+	a.authMu.Lock()
+	authorized := releaseMode != "production" || a.licensed
+	a.authMu.Unlock()
+	if !authorized {
+		raw, _ := json.Marshal(model.Snapshot{AuthRequired: true, Authorized: false, Native: true})
+		return string(raw), nil
+	}
 	p, revision, e := a.db.Proxy()
 	if e != nil {
 		return "", e
@@ -98,7 +121,7 @@ func (a *App) snapshot() (string, error) {
 	a.mu.Lock()
 	network := a.network
 	a.mu.Unlock()
-	s := model.Snapshot{Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
+	s := model.Snapshot{AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
 	raw, e := json.Marshal(struct {
 		model.Snapshot
 		Fingerprint map[string]any `json:"fingerprint"`
@@ -166,6 +189,54 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	if action == "snapshot" {
 		return a.snapshot()
 	}
+	if action == "auth.login" || action == "auth.register" {
+		a.authMu.Lock()
+		defer a.authMu.Unlock()
+		if a.license == nil {
+			return "", errors.New("正式授权服务尚未配置，请联系提供者")
+		}
+		var input struct{ Username, Password, Card string }
+		if e := json.Unmarshal([]byte(payload), &input); e != nil {
+			return "", e
+		}
+		card := ""
+		if action == "auth.register" {
+			card = input.Card
+			if card == "" {
+				return "", errors.New("请输入卡密")
+			}
+		}
+		if e := a.license.Login(a.ctx, input.Username, input.Password, card); e != nil {
+			return "", e
+		}
+		if e := a.db.SaveLicenseToken(a.license.Token); e != nil {
+			return "", e
+		}
+		a.licensed = true
+		raw, _ := json.Marshal(map[string]bool{"authorized": true})
+		return string(raw), nil
+	}
+	if action == "auth.logout" {
+		a.authMu.Lock()
+		a.licensed = false
+		if a.license != nil {
+			var result map[string]any
+			a.license.Request(a.ctx, "/v1/logout", struct{}{}, &result)
+			a.license.Token = ""
+		}
+		a.db.SaveLicenseToken("")
+		a.authMu.Unlock()
+		a.browser.Stop()
+		a.code.Stop()
+		return a.snapshot()
+	}
+	a.authMu.Lock()
+	allowed := releaseMode != "production" || a.licensed
+	a.authMu.Unlock()
+	if !allowed {
+		return "", errors.New("请先登录并激活产品授权")
+	}
+
 	if action == "terminal.write" {
 		var p struct {
 			Data string `json:"data"`
@@ -393,4 +464,30 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		return "", e
 	}
 	return a.snapshot()
+}
+
+func (a *App) licenseMonitor() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			a.authMu.Lock()
+			if a.license == nil || a.license.Token == "" {
+				a.authMu.Unlock()
+				continue
+			}
+			bs, _ := a.browser.State()
+			cs := a.code.State()
+			e := a.license.Verify(a.ctx, bs.Phase == "running", cs.Phase == "running")
+			a.licensed = e == nil
+			a.authMu.Unlock()
+			if e != nil {
+				a.browser.Stop()
+				a.code.Stop()
+			}
+		}
+	}
 }

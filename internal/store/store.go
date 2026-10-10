@@ -44,6 +44,7 @@ func Open(dir string, p Protector) (*Store, error) {
 	if _, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), proxy BLOB NOT NULL, secret BLOB, revision INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL);
+ CREATE TABLE IF NOT EXISTS license_session(id INTEGER PRIMARY KEY CHECK(id=1),secret BLOB NOT NULL);
  PRAGMA user_version=1;`); e != nil {
 		db.Close()
 		return nil, e
@@ -145,5 +146,34 @@ func (s *Store) SaveProfile(p model.Profile) error {
 		return e
 	}
 	_, e = s.db.Exec("UPDATE profile SET value=? WHERE id=1", raw)
+	return e
+}
+
+func (s *Store) LicenseToken() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var raw []byte
+	e := s.db.QueryRow("SELECT secret FROM license_session WHERE id=1").Scan(&raw)
+	if errors.Is(e, sql.ErrNoRows) {
+		return "", nil
+	}
+	if e != nil {
+		return "", e
+	}
+	b, e := s.protector.Unprotect(raw)
+	return string(b), e
+}
+func (s *Store) SaveLicenseToken(token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token == "" {
+		_, e := s.db.Exec("DELETE FROM license_session WHERE id=1")
+		return e
+	}
+	sealed, e := s.protector.Protect([]byte(token))
+	if e != nil {
+		return e
+	}
+	_, e = s.db.Exec("INSERT INTO license_session(id,secret) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET secret=excluded.secret", sealed)
 	return e
 }

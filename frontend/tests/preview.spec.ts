@@ -64,3 +64,13 @@ test('明暗主题与窄屏布局', async ({ page }, info) => {
  await page.getByRole('button', { name: '全局连接', exact: true }).click(); await page.screenshot({ path: info.outputPath('mobile-connection.png'), fullPage: true })
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('管理面板预览支持生成、查询和撤销示例', async ({ page }, info) => {
+ await page.goto('./#admin'); await page.getByRole('button', { name: '进入管理面板' }).click()
+ await page.getByLabel('卡密备注').fill('页面体验'); await page.getByRole('button', { name: '生成永久卡密' }).click()
+ await expect(page.getByRole('dialog')).toContainText('示例'); await page.getByRole('button', { name: '已保存' }).click()
+ await page.getByLabel('搜索卡密或用户').fill('页面体验'); await expect(page.locator('tbody tr')).toHaveCount(1)
+ await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.getByRole('button', { name: '确认撤销' }).click(); await expect(page.getByText('已撤销', { exact: true })).toBeVisible()
+ await page.getByLabel('搜索卡密或用户').fill(''); await page.getByRole('button', { name: '用户', exact: true }).click(); await expect(page.getByText('体验用户', { exact: true })).toBeVisible()
+ await page.screenshot({ path: info.outputPath('admin-users-preview.png'), fullPage: true })
+})

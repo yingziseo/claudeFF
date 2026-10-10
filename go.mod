@@ -3,6 +3,7 @@ module github.com/yingziseo/claudeFF
 go 1.26.0
 
 require (
+ golang.org/x/crypto v0.53.0
 	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/chromedp/chromedp v0.14.2
 	github.com/creack/pty v1.1.24
