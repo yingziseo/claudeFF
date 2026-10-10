@@ -121,6 +121,25 @@ func (a *App) snapshot() (string, error) {
 	a.mu.Lock()
 	network := a.network
 	a.mu.Unlock()
+	cs := a.code.State()
+	if network.Observation != nil && time.Since(network.Observation.At) > 5*time.Minute {
+		var active *model.Observation
+		if bs.Phase == "running" {
+			active = bs.Observation
+		}
+		if cs.Phase == "running" && cs.Observation != nil && (active == nil || cs.Observation.At.After(active.At)) {
+			active = cs.Observation
+		}
+		if active != nil && active.IP == network.Observation.IP && active.Revision == network.Observation.Revision && time.Since(active.At) < 2*time.Minute {
+			network.Observation = active
+			network.Message = "受管出口最近已核验"
+		} else {
+			network.Phase = "idle"
+			network.Message = "检测已过期，请重新检测"
+			network.Observation = nil
+		}
+	}
+
 	previous, _ := a.db.PreviousObservation()
 	s := model.Snapshot{Previous: previous, AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
 	raw, e := json.Marshal(struct {

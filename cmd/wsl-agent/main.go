@@ -218,6 +218,7 @@ func run() error {
 					cancel()
 					return
 				}
+				emit("observation", model.Observation{IP: observed.IP, At: time.Now().UTC(), Revision: cfg.Revision})
 			}
 		}
 	}()

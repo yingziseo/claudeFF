@@ -102,7 +102,7 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 		return fail(e)
 	}
 	url := "http://" + listener.Addr().String() + "/" + token
-	data := struct{ IP, Language, Timezone, ID, Version string }{expected.IP, p.Language, p.Timezone, p.ID, KernelVersion}
+	data := struct{ IP, Country, Language, Timezone, ID, Version, At, Token string }{expected.IP, expected.Country, p.Language, p.Timezone, p.ID, KernelVersion, expected.At.Local().Format("2006-01-02 15:04:05"), token}
 	tpl := template.Must(template.New("start").Parse(startHTML))
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.URL.Path != "/"+token {
@@ -111,8 +111,23 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
-		tpl.Execute(w, data)
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-"+token+"'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		if r.URL.Query().Get("refresh") == "1" {
+			if e := m.verify(ctx, expected.IP); e != nil {
+				m.Stop()
+				m.set(model.Status{Phase: "failed", Message: e.Error()})
+				http.Error(w, "浏览器出口核验失败，已停止", 503)
+				return
+			}
+		}
+		state, _ := m.State()
+		display := data
+		if state.Observation != nil {
+			display.IP = state.Observation.IP
+			display.At = state.Observation.At.Local().Format("2006-01-02 15:04:05")
+		}
+		tpl.Execute(w, display)
 	})}
 	m.mu.Lock()
 	m.server = server
@@ -170,8 +185,33 @@ func (m *Manager) Stop() {
 	m.set(model.Status{Phase: "idle", Message: "浏览器已关闭"})
 }
 
-const startHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>claudeFF 环境信息</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#fafaf9;color:#292927;font:16px -apple-system,Segoe UI,Microsoft YaHei,sans-serif;margin:0}main{max-width:850px;margin:10vh auto;padding:35px}h1{font-size:34px;font-weight:500}p{color:#686965;line-height:1.8}.grid{display:grid;grid-template-columns:repeat(3,1fr);background:white;border:1px solid #e4e4df;border-radius:16px;margin:35px 0}.grid div{padding:24px}small{display:block;color:#686965;margin-bottom:12px}b{font-weight:500}a{display:inline-block;background:#292927;color:white;padding:14px 22px;border-radius:8px;text-decoration:none}footer{margin-top:25px;color:#686965;font-size:12px}@media(max-width:600px){.grid{grid-template-columns:1fr 1fr}}</style><main><p>CLAUDEFF · 环境信息</p><h1>你的环境，一目了然。</h1><p>此页由当前指纹浏览器打开，出口已通过实际浏览器路径核验。</p><section class="grid"><div><small>出口 IP</small><b>{{.IP}}</b></div><div><small>语言</small><b>{{.Language}}</b></div><div><small>时区</small><b>{{.Timezone}}</b></div><div><small>环境标识</small><b>{{.ID}}</b></div><div><small>内核</small><b>{{.Version}}</b></div><div><small>住宅属性</small><b>未验证</b></div></section><a href="https://claude.ai/">打开 Claude.ai →</a><footer>历史启动检测结果 · 详细指纹与重新检测请在管理程序查看。第三方工具，非官方客户端。</footer></main></html>`
+const startHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>claudeFF 环境信息</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#fafaf9;color:#292927;font:16px -apple-system,Segoe UI,Microsoft YaHei,sans-serif;margin:0}main{max-width:850px;margin:10vh auto;padding:35px}h1{font-size:34px;font-weight:500}p{color:#686965;line-height:1.8}.grid{display:grid;grid-template-columns:repeat(3,1fr);background:white;border:1px solid #e4e4df;border-radius:16px;margin:35px 0}.grid div{padding:24px}small{display:block;color:#686965;margin-bottom:12px}b{font-weight:500}a{display:inline-block;background:#292927;color:white;padding:14px 22px;border-radius:8px;text-decoration:none}button{font:inherit;background:white;border:1px solid #e4e4df;color:#292927;padding:14px 22px;border-radius:8px;cursor:pointer}footer{margin-top:25px;color:#686965;font-size:12px}@media(max-width:600px){.grid{grid-template-columns:1fr 1fr}}</style><main><p>CLAUDEFF · 环境信息</p><h1>你的环境，一目了然。</h1><p>此页由当前指纹浏览器打开，出口已通过实际浏览器路径核验。</p><section class="grid"><div><small>出口 IP</small><b>{{.IP}}</b></div><div><small>国家 / 地区</small><b>{{if .Country}}{{.Country}}{{else}}未知{{end}}</b></div><div><small>语言</small><b>{{.Language}}</b></div><div><small>时区</small><b>{{.Timezone}}</b></div><div><small>环境标识</small><b>{{.ID}}</b></div><div><small>内核</small><b>{{.Version}}</b></div><div><small>住宅属性</small><b>未验证</b></div></section><a href="https://claude.ai/">打开 Claude.ai →</a> <a href="?refresh=1">刷新检测</a> <button id="copy">复制 IP</button><script nonce="{{.Token}}">document.getElementById("copy").onclick=()=>navigator.clipboard.writeText("{{.IP}}");</script><footer>最近核验 {{.At}} · 详细指纹请在管理程序查看。第三方工具，非官方客户端。</footer></main></html>`
 
+func (m *Manager) verify(ctx context.Context, ip string) error {
+	probe, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+	limited, limit := context.WithTimeout(probe, 25*time.Second)
+	defer limit()
+	var text string
+	e := chromedp.Run(limited, chromedp.Navigate(proxy.DetectionURL), chromedp.Text("body", &text, chromedp.ByQuery))
+	var got struct {
+		IP string `json:"ip"`
+	}
+	if e == nil {
+		e = json.Unmarshal([]byte(text), &got)
+	}
+	if e != nil || got.IP != ip {
+		return errors.New("运行期间出口检测失败或变化，已关闭浏览器")
+	}
+	m.mu.Lock()
+	if m.status.Observation != nil {
+		o := *m.status.Observation
+		o.At = time.Now().UTC()
+		m.status.Observation = &o
+	}
+	m.mu.Unlock()
+	return nil
+}
 func (m *Manager) monitor(ctx context.Context, ip string) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -180,21 +220,9 @@ func (m *Manager) monitor(ctx context.Context, ip string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			probe, cancel := chromedp.NewContext(ctx)
-			limited, limit := context.WithTimeout(probe, 25*time.Second)
-			var text string
-			e := chromedp.Run(limited, chromedp.Navigate(proxy.DetectionURL), chromedp.Text("body", &text, chromedp.ByQuery))
-			var got struct {
-				IP string `json:"ip"`
-			}
-			if e == nil {
-				e = json.Unmarshal([]byte(text), &got)
-			}
-			limit()
-			cancel()
-			if e != nil || got.IP != ip {
+			if e := m.verify(ctx, ip); e != nil {
 				m.Stop()
-				m.set(model.Status{Phase: "failed", Message: "运行期间出口检测失败或变化，已关闭浏览器"})
+				m.set(model.Status{Phase: "failed", Message: e.Error()})
 				return
 			}
 		}
