@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/yingziseo/claudeFF/internal/model"
@@ -144,7 +145,7 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 	go server.Serve(listener)
 	closeProbe()
 	if e = m.restoreTabs(ctx, url); e != nil {
-		return fail(errors.New("浏览器标签页恢复失败；已有浏览器数据已保留"))
+		return fail(fmt.Errorf("浏览器标签页恢复失败（数据已保留）：%w", e))
 	}
 	o := *expected
 	o.At = time.Now().UTC()

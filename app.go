@@ -411,7 +411,8 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	case "browser.stop":
 		a.browser.Stop()
 	case "profile.save":
-		if e = a.stopped(); e != nil {
+		if state, _ := a.browser.State(); state.Phase == "running" {
+			e = errors.New("请先关闭浏览器")
 			break
 		}
 		var p *model.Profile
@@ -465,9 +466,6 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		}
 		e = a.code.Start(businessCtx, a.relay.URL(), o)
 	case "project.choose":
-		if e = a.stopped(); e != nil {
-			break
-		}
 		var path string
 		path, e = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择本机项目目录"})
 		if e == nil && path != "" {
@@ -476,7 +474,8 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	case "data.open":
 		e = openDataDirectory(a.root)
 	case "cache.clear":
-		if e = a.stopped(); e != nil {
+		if state, _ := a.browser.State(); state.Phase == "running" {
+			e = errors.New("请先关闭浏览器")
 			break
 		}
 		for _, name := range []string{"Cache", "Code Cache", "GPUCache"} {

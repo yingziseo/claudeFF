@@ -24,7 +24,7 @@ export async function invoke(action: string, payload: unknown = {}): Promise<Sna
  if (action === 'code.install') { if (demo.network.phase !== 'ready') throw new Error('请先配置并检测全局代理'); demo.code = { phase: 'ready', message: '演示安装完成', observation: observation() } }
  if (action === 'code.start') { if (demo.code.phase !== 'ready') throw new Error('请先准备 Code'); demo.code = { ...demo.code, phase: 'running', message: '终端交互演示' } }
  if (action === 'code.stop') demo.code = { ...demo.code, phase: 'ready', message: '演示已停止' }
- if (action === 'profile.save') { if (demo.profile) { Object.assign(demo.profile, payload); demo.profile.revision++; demo.browser = idle(); demo.code = idle() } }
+ if (action === 'profile.save') { if (demo.profile) { Object.assign(demo.profile, payload); demo.profile.revision++; demo.browser = idle() } }
  if (action === 'demo.fail') demo.code = { phase: 'failed', message: '示例：下载失败，请重试。' }
  if (action === 'project.choose') demo.project = '示例项目目录'
  if (action === 'demo.reset') { demo = { ...demo, profile: undefined, proxy: { protocol: 'http', host: '', port: 8080, username: '' }, hasPassword: false, revision: 0, network: { phase: 'idle', message: '先添加你的代理' }, browser: idle(), code: idle() } }

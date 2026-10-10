@@ -77,7 +77,7 @@ jobs:
           cp docs/macOS运行说明.md "$CopyDestination/README.md"
           cp docs/第三方许可与来源.md "$CopyDestination/THIRD-PARTY.md"
           python3 build/collect-notices.py "$CopyDestination/DEPENDENCY-NOTICES.txt"
-          ditto -c -k --sequesterRsrc --keepParent build/bin/claudeFF.app claudeFF-macos-${{ matrix.name }}.zip
+          ditto -c -k --sequesterRsrc build/bin claudeFF-macos-${{ matrix.name }}.zip
           shasum -a 256 claudeFF-macos-${{ matrix.name }}.zip > claudeFF-macos-${{ matrix.name }}.sha256
       - uses: actions/upload-artifact@v4
         if: always()
