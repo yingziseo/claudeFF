@@ -1,148 +1,71 @@
-import { useDeferredValue, useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Eye, EyeOff, Globe2, Info, LayoutGrid, LogOut, Moon, MoreHorizontal, Plus, RotateCcw, Search, Settings2, Square, Sun, Play, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, FolderOpen, Globe2, Home, Info, Loader2, Monitor, Moon, Network, RotateCcw, Settings2, ShieldCheck, Square, Sun, TerminalSquare, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Modal } from './components/ui/modal'
-import { sampleEnvironments, previewNote, type Environment } from './lib/preview'
-
-const logo = `${import.meta.env.BASE_URL}brand/claudeff-icon.png`
-type Theme = 'dark' | 'light'
-const readTheme = (): Theme => { try { return localStorage.getItem('claudeff.preview.theme') === 'light' ? 'light' : 'dark' } catch { return 'dark' } }
-
-function Brand({ large = false }: { large?: boolean }) {
-  return <div className={`brand ${large ? 'brand-large' : ''}`}><img src={logo} alt="" width={large ? 80 : 38} height={large ? 80 : 38} /><span>claude<span className="brand-ff">FF</span></span></div>
-}
-
-function Auth({ onEnter }: { onEnter: (name: string) => void }) {
-  const [register, setRegister] = useState(false)
-  const [name, setName] = useState('体验用户')
-  const [password, setPassword] = useState('claudeFF')
-  const [showPassword, setShowPassword] = useState(false)
-  const submit = (event: FormEvent) => { event.preventDefault(); onEnter(name.trim() || '体验用户'); setPassword('') }
-  return <main className="auth-page">
-    <div className="auth-card">
-      <Brand large />
-      <h1>{register ? '准备好你的工作空间' : '欢迎回来'}</h1>
-      <p className="auth-subtitle">简单开始，让每个浏览器环境各自独立。</p>
-      <div className="segmented auth-tabs" aria-label="选择登录或注册">
-        <button aria-pressed={!register} onClick={() => setRegister(false)}>登录</button>
-        <button aria-pressed={register} onClick={() => setRegister(true)}>注册</button>
-      </div>
-      <form onSubmit={submit} className="auth-form">
-        <label className="field">用户名<input autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} placeholder="怎么称呼你？" /></label>
-        <label className="field">密码<div className="password-field"><input autoComplete="off" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入任意内容即可体验" /><button type="button" className="icon-button" aria-label={showPassword ? '隐藏密码' : '显示密码'} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
-        {register && <label className="field">确认密码<input type="password" autoComplete="off" placeholder="预览阶段无需验证" /></label>}
-        <Button type="submit" className="auth-submit">{register ? '创建并进入工作空间' : '进入工作空间'}<ArrowRight size={16} /></Button>
-      </form>
-      <div className="auth-hint"><span className="quiet-dot" />开发模式 · 随意输入即可体验，无需真实账号</div>
-    </div>
-    <p className="auth-footer">独立环境，从容工作。<span>claudeFF 设计预览</span></p>
-  </main>
-}
-
-function CreateEnvironment({ open, close, onCreate }: { open: boolean; close: () => void; onCreate: (name: string, note: string) => void }) {
-  const [step, setStep] = useState(1)
-  const [address, setAddress] = useState('')
-  const [name, setName] = useState('我的新环境')
-  const [note, setNote] = useState('')
-  useEffect(() => { if (open) { setStep(1); setAddress(''); setName('我的新环境'); setNote('') } }, [open])
-  return <Modal open={open} onClose={close} title="添加一个新环境" description="只需两步，把新的工作空间准备好。" returnFocus="new-environment">
-    <div className="steps" aria-label={`第 ${step} 步，共 2 步`}><span className={step === 1 ? 'current' : 'complete'}><b>{step === 2 ? <Check size={12} /> : '1'}</b>连接代理</span><span className="step-line" /><span className={step === 2 ? 'current' : ''}><b>2</b>命名环境</span></div>
-    {step === 1 ? <form onSubmit={(e) => { e.preventDefault(); setStep(2) }}>
-      <div className="wizard-intro"><div className="soft-icon"><Globe2 size={23} /></div><div><h3>从你的代理开始</h3><p>粘贴代理地址，其他设置按需展开。</p></div></div>
-      <label className="field">代理地址<input autoFocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="例如 proxy.example.com:8080" autoComplete="off" /></label>
-      <details className="advanced"><summary>高级选项<ChevronDown size={15} /></summary><div className="advanced-body">
-        <label className="field">代理协议<select defaultValue="HTTP"><option>HTTP</option><option>HTTPS</option><option>SOCKS5</option></select></label>
-        <div className="form-pair"><label className="field">代理用户名<input placeholder="没有则留空" autoComplete="off" /></label><label className="field">代理密码<input type="password" placeholder="没有则留空" autoComplete="off" /></label></div>
-      </div></details>
-      <p className="inline-note"><Info size={15} />当前仅预览流程，不连接代理，也不保存代理凭据。</p>
-      <div className="modal-actions"><Button variant="ghost" onClick={close}>取消</Button><Button type="submit">预览下一步<ArrowRight size={15} /></Button></div>
-    </form> : <form onSubmit={(e) => { e.preventDefault(); onCreate(name.trim(), note.trim()); close() }}>
-      <label className="field">环境名称<input autoFocus required pattern=".*\S.*" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="给它起一个好记的名字" /></label>
-      <label className="field">备注<span className="optional">可选</span><textarea maxLength={240} value={note} onChange={(e) => setNote(e.target.value)} placeholder="这个环境用来做什么？" rows={2} /></label>
-      <div className="configuration-note"><Check size={17} /><div><strong>复杂的配置，交给我们</strong><p>正式版本会根据真实检测结果配置语言和时区。</p></div></div>
-      <details className="advanced"><summary>查看环境配置<ChevronDown size={15} /></summary><dl className="property-list"><div><dt>代理出口</dt><dd>未检测</dd></div><div><dt>语言 / 时区</dt><dd>等待真实检测</dd></div><div><dt>浏览器数据</dt><dd>每个环境独立保存</dd></div><div><dt>高级指纹</dt><dd>依据内核能力启用</dd></div></dl></details>
-      <div className="modal-actions"><Button variant="ghost" onClick={() => setStep(1)}><ArrowLeft size={15} />上一步</Button><Button type="submit">添加预览环境<Plus size={15} /></Button></div>
-    </form>}
-  </Modal>
-}
-
-function SettingsPage({ theme, setTheme, notify, logout }: { theme: Theme; setTheme: (t: Theme) => void; notify: (s: string) => void; logout: () => void }) {
-  const [timeout, setTimeout] = useState('15')
-  return <div className="settings-content">
-    <section className="settings-section"><h2>让工作空间更合心意</h2><p>常用设置，刚刚好。</p>
-      <div className="settings-group"><div className="setting-row appearance-row"><div><strong>外观</strong><p>选择你喜欢的明暗，立即生效。</p></div><div className="theme-options">
-        <button aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><span className="theme-thumbnail light-thumbnail"><i /><i /><i /></span><span><Sun size={14} />浅色{theme === 'light' && <Check size={14} />}</span></button>
-        <button aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}><span className="theme-thumbnail dark-thumbnail"><i /><i /><i /></span><span><Moon size={14} />深色{theme === 'dark' && <Check size={14} />}</span></button>
-      </div></div></div>
-    </section>
-    <section className="settings-section"><h2>连接与存储</h2><p>默认就很好用，需要时再调整。</p><div className="settings-group">
-      <details className="setting-details"><summary><span><Globe2 size={18} />高级设置</span><ChevronDown size={16} /></summary><div className="setting-details-body">
-        <div className="setting-row"><div><strong>代理检测超时</strong><p>连接较慢时，可以多等一会。</p></div><select aria-label="代理检测超时" value={timeout} onChange={(e) => { setTimeout(e.target.value); notify('已调整预览设置，未改变真实网络配置。') }}><option value="10">10 秒</option><option value="15">15 秒</option><option value="30">30 秒</option></select></div>
-        <div className="setting-row"><div><strong>Chromium 位置</strong><p>接入桌面功能后选择浏览器内核。</p></div><Button variant="secondary" onClick={() => notify('网页预览不访问你的电脑文件；此功能在桌面版接入。')}>选择位置</Button></div>
-        <div className="setting-row"><div><strong>本地数据目录</strong><p>浏览器数据将保存在 Windows 应用数据目录。</p></div><Button variant="ghost" onClick={() => notify('网页预览未创建本地浏览器数据。')}>查看位置<ChevronRight size={14} /></Button></div>
-      </div></details>
-      <div className="setting-row"><div><strong>清理缓存</strong><p>仅清理临时缓存，保留登录状态与环境配置。</p></div><Button variant="secondary" onClick={() => notify('当前没有真实浏览器缓存，这是界面预览。')}>清理</Button></div>
-    </div></section>
-    <section className="settings-section"><h2>关于</h2><div className="settings-group"><div className="setting-row"><div className="about-brand"><img src={logo} alt="" width="42" height="42" /><div><strong>claudeFF</strong><p>独立浏览器环境管理</p></div></div><span className="version">0.1 · 设计预览</span></div><div className="setting-row"><div><strong>当前体验身份</strong><p>开发模式，不关联真实账号。</p></div><Button variant="ghost" onClick={logout}>退出体验<LogOut size={15} /></Button></div></div></section>
-  </div>
-}
-
+import { TerminalPane } from './components/TerminalPane'
+import { invoke, isNative } from './lib/api'
+import type { ProxyConfig, Snapshot } from './lib/api'
+const symbol = `${import.meta.env.BASE_URL}brand/claude-symbol.svg`
+type Page = 'home' | 'browser' | 'code' | 'connection' | 'settings'
+function ClaudeIcon({ large = false }: { large?: boolean }) { return <img className={large ? 'claude-icon large' : 'claude-icon'} src={symbol} alt="Claude 官方图标" /> }
+const names: Record<Page, string> = { home: '工作空间', browser: 'Claude.ai', code: 'Claude Code', connection: '全局连接', settings: '设置' }
+const steps = ['准备隔离沙箱', '下载安装 Claude Code', '同步浏览器环境配置', '核验共同出口与隔离', '准备终端']
 export default function App() {
-  const [theme, setTheme] = useState<Theme>(readTheme)
-  const [user, setUser] = useState<string | null>(null)
-  const [page, setPage] = useState<'environments' | 'settings'>('environments')
-  const [environments, setEnvironments] = useState(sampleEnvironments)
-  const [query, setQuery] = useState('')
-  const deferredQuery = useDeferredValue(query)
-  const [onlyRunning, setOnlyRunning] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [editing, setEditing] = useState<Environment | null>(null)
-  const [deleting, setDeleting] = useState<Environment | null>(null)
-  const [help, setHelp] = useState(false)
-  const [toast, setToast] = useState('')
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const heading = useRef<HTMLHeadingElement>(null)
-  const notify = (message: string) => { if (toastTimer.current) clearTimeout(toastTimer.current); setToast(message); toastTimer.current = setTimeout(() => setToast(''), 4500) }
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
-  useEffect(() => { document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme; try { localStorage.setItem('claudeff.preview.theme', theme) } catch { /* Theme still works without storage. */ } }, [theme])
-  useEffect(() => { if (user) heading.current?.focus() }, [page, user])
-  const visible = environments.filter((env) => `${env.name} ${env.note} ${env.region} ${env.ip}`.toLowerCase().includes(deferredQuery.toLowerCase().trim()) && (!onlyRunning || env.status === 'running'))
-  const enter = (name: string) => { setUser(name); setPage('environments') }
-  const logout = () => { setUser(null); setToast('') }
-  const toggleState = (env: Environment) => {
-    if (env.status === 'unchecked') { notify('这个预览环境尚未检测，不能启动真实浏览器。'); return }
-    setEnvironments((items) => items.map((item) => item.id === env.id ? { ...item, status: item.status === 'running' ? 'stopped' : 'running' } : item))
-    notify('已切换演示状态，未启动或关闭真实浏览器。')
-  }
-  return <>
-    <div className="preview-bar"><span><span className="preview-dot" />界面预览<span className="preview-detail"> · 示例数据，未连接浏览器</span></span><div>{user && <button onClick={() => { setEnvironments(sampleEnvironments()); setQuery(''); setOnlyRunning(false); notify('已恢复初始示例。') }}><RotateCcw size={12} />重置示例</button>}<button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`切换为${theme === 'dark' ? '浅色' : '深色'}主题`}>{theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}</button></div></div>
-    {!user ? <Auth onEnter={enter} /> : <div className="workspace">
-      <a className="skip-link" href="#main-content">跳到主要内容</a>
-      <aside className="sidebar"><Brand /><span className="sidebar-caption">工作空间</span><nav aria-label="主导航"><button aria-label="浏览器环境" className={page === 'environments' ? 'active' : ''} onClick={() => setPage('environments')}><LayoutGrid size={18} /><span>浏览器环境</span></button><button aria-label="设置" className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}><Settings2 size={18} /><span>设置</span></button></nav>
-        <div className="sidebar-bottom"><button className="preview-help" onClick={() => setHelp(true)}><Info size={15} /><span>关于这次预览</span></button><div className="account"><span className="avatar">{user.slice(0, 1)}</span><div><strong>{user}</strong><span>开发模式</span></div><button className="icon-button" aria-label="退出体验" onClick={logout}><LogOut size={16} /></button></div></div>
-      </aside>
-      <main className="main-content" id="main-content"><header className="page-header"><div><h1 ref={heading} tabIndex={-1}>{page === 'environments' ? '浏览器环境' : '设置'}</h1><p>{page === 'environments' ? '你的每个工作空间，都井然有序。' : '按你的习惯，轻松调整。'}</p></div>{page === 'environments' && <Button id="new-environment" onClick={() => setCreating(true)}><Plus size={17} /><span>新建环境</span></Button>}</header>
-        {page === 'settings' ? <SettingsPage theme={theme} setTheme={setTheme} notify={notify} logout={logout} /> : <div className="environments-content">
-          <div className="list-toolbar"><div className="segmented filter-tabs"><button aria-pressed={!onlyRunning} onClick={() => setOnlyRunning(false)}>全部环境<span>{environments.length}</span></button><button aria-pressed={onlyRunning} onClick={() => setOnlyRunning(true)}>运行中</button></div><label className="search-field"><Search size={16} /><span className="sr-only">搜索环境</span><input placeholder="搜索环境" value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button className="icon-button" aria-label="清除搜索" onClick={() => setQuery('')}><X size={14} /></button>}</label></div>
-          {visible.length ? <div className="environment-list"><div className="table-heading" aria-hidden="true"><span>环境</span><span>代理 / 地区</span><span>状态</span><span>操作</span></div><ul>{visible.map((env) => <li key={env.id} className="environment-row">
-            <div className="environment-identity"><span className={`environment-icon ${env.tone}`}><Globe2 size={22} /></span><div><h2>{env.name}</h2><p title={env.note}>{env.note || '还没有添加备注'}</p></div></div>
-            <div className="environment-network"><span className="ip">{env.ip}</span><span><span className="country-code">{env.code}</span>{env.region}</span></div>
-            <span className={`status status-${env.status}`}><i />{env.status === 'running' ? '运行中' : env.status === 'unchecked' ? '待检测' : '已关闭'}</span>
-            <div className="row-actions"><Button variant="secondary" className={env.status === 'running' ? 'stop-button' : ''} onClick={() => toggleState(env)} aria-label={`${env.status === 'running' ? '关闭' : '启动'}${env.name}`}>{env.status === 'running' ? <Square size={13} /> : <Play size={13} />}{env.status === 'running' ? '关闭' : '启动'}</Button><button id={`edit-${env.id}`} className="icon-button" aria-label={`编辑${env.name}`} onClick={() => setEditing({ ...env })}><MoreHorizontal size={19} /></button></div>
-          </li>)}</ul><div className="list-footer"><span>{visible.length} 个环境<span className="footer-separator">·</span>以上为界面示例</span><button onClick={() => { setEnvironments([]); setQuery(''); setOnlyRunning(false) }}>查看空状态<ChevronRight size={13} /></button></div></div> : <div className="empty-state"><span className="empty-icon"><LayoutGrid size={30} /></span><h2>{environments.length ? '没有找到这个环境' : '给下一份工作，留一个独立空间'}</h2><p>{environments.length ? '换一个名称、地区或 IP 试试。' : '添加代理，为它起个名字，就可以准备开始了。'}</p><Button variant={environments.length ? 'secondary' : 'primary'} onClick={() => { if (environments.length) { setQuery(''); setOnlyRunning(false) } else setCreating(true) }}>{environments.length ? '显示全部环境' : '创建第一个环境'}{!environments.length && <Plus size={16} />}</Button></div>}
-          <div className="workspace-note"><span className="note-line" /><p>独立的浏览数据，熟悉的工作方式。</p><span className="note-line" /></div>
-        </div>}
-      </main>
-    </div>}
-    <CreateEnvironment open={creating} close={() => setCreating(false)} onCreate={(name, note) => { setEnvironments((items) => [...items, { id: `preview-${crypto.randomUUID()}`, name, note, region: '等待检测', code: '—', ip: '未检测', status: 'unchecked', language: '待配置', timezone: '待配置', tone: 'blue' }]); setQuery(''); setOnlyRunning(false); notify('已添加预览环境。代理与浏览器功能将在后续接入。') }} />
-    <Modal open={!!editing} onClose={() => setEditing(null)} title="环境详情" description="一个好记的名字，让工作更有条理。" returnFocus={editing ? `edit-${editing.id}` : 'new-environment'}>{editing && <form onSubmit={(e) => { e.preventDefault(); setEnvironments((items) => items.map((item) => item.id === editing.id ? { ...editing, name: editing.name.trim() } : item)); setEditing(null); notify('已更新预览中的名称与备注。') }}>
-      <label className="field">环境名称<input required maxLength={60} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label><label className="field">备注<textarea rows={2} maxLength={240} value={editing.note} onChange={(e) => setEditing({ ...editing, note: e.target.value })} /></label>
-      <details className="advanced"><summary>更多环境信息<ChevronDown size={15} /></summary><dl className="property-list"><div><dt>示例出口 IP</dt><dd>{editing.ip}</dd></div><div><dt>语言</dt><dd>{editing.language}</dd></div><div><dt>时区</dt><dd>{editing.timezone}</dd></div><div><dt>住宅属性</dt><dd>未验证</dd></div></dl></details>
-      <div className="modal-actions"><Button variant="ghost" className="destructive-text" onClick={() => { setDeleting(editing); setEditing(null) }}><Trash2 size={15} />删除环境</Button><Button type="submit">保存修改</Button></div>
-    </form>}</Modal>
-    <Modal open={!!deleting} onClose={() => setDeleting(null)} title="删除这个预览环境？" description={`“${deleting?.name ?? ''}”将从示例列表移除。这里没有真实浏览器数据。`} returnFocus="new-environment"><div className="modal-actions"><Button variant="secondary" onClick={() => setDeleting(null)}>保留环境</Button><Button variant="danger" onClick={() => { setEnvironments((items) => items.filter((item) => item.id !== deleting?.id)); setDeleting(null); notify('预览环境已删除。') }}>删除预览环境</Button></div></Modal>
-    <Modal open={help} onClose={() => setHelp(false)} title="先体验，再打磨" description="这是一份可以操作的界面设计预览。"><div className="help-copy"><p>{previewNote}</p><p>你可以体验登录、搜索、主题切换、创建、编辑与删除。输入的密码和代理凭据不会被保存或上传。</p><p>设计风格确认后，再开始真实浏览器、代理和本地存储的开发。卡密及用户管理面板放在最后。</p></div><div className="modal-actions"><Button onClick={() => setHelp(false)}>知道了</Button></div></Modal>
-    {toast && <div className="toast" role="status"><Info size={17} /><span>{toast}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setToast('')}><X size={15} /></button></div>}
-  </>
+ const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+ const [page, setPage] = useState<Page>('home')
+ const [theme, setTheme] = useState(() => { try { return localStorage.getItem('claudeff.theme') || 'dark' } catch { return 'dark' } })
+ const [busy, setBusy] = useState(''); const [toast, setToast] = useState(''); const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+ const [warning, setWarning] = useState(false); const [details, setDetails] = useState(false); const [auth, setAuth] = useState(false); const [register, setRegister] = useState(false)
+ const [proxy, setProxy] = useState<ProxyConfig>({ protocol: 'http', host: '', port: 8080, username: '' }); const [password, setPassword] = useState(''); const [keepPassword, setKeepPassword] = useState(true)
+ const [installStep, setInstallStep] = useState(-1); const [browserTab, setBrowserTab] = useState('start'); const [language, setLanguage] = useState('en-US'); const [timezone, setTimezone] = useState('UTC')
+ const notify = (value: string) => { if (timer.current) clearTimeout(timer.current); setToast(value); timer.current = setTimeout(() => setToast(''), 6000) }
+ const refresh = async () => { const next = await invoke('snapshot'); setSnapshot(next); return next }
+ useEffect(() => { void refresh().then((s) => { setProxy(s.proxy); setLanguage(s.profile?.language || 'en-US'); setTimezone(s.profile?.timezone || 'UTC') }).catch((e: Error) => notify(e.message)); const id = isNative() ? setInterval(() => { void refresh().catch(() => {}) }, 2000) : null; return () => { if (id) clearInterval(id); if (timer.current) clearTimeout(timer.current) } }, [])
+ useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('claudeff.theme', theme) } catch { /* optional storage */ } }, [theme])
+ const run = async (action: string, payload: unknown = {}) => { if (busy) return; setBusy(action); try { setSnapshot(await invoke(action, payload)); if (!isNative()) notify('已更新演示状态，未执行真实网络、安装或浏览器操作。') } catch (e) { notify((e as Error).message) } finally { setBusy('') } }
+ const navigate = (p: Page) => { setPage(p); window.scrollTo({ top: 0 }) }
+ const install = async () => { setWarning(false); if (busy) return; setBusy('code.install'); setInstallStep(0); let id: ReturnType<typeof setInterval> | undefined
+  if (!isNative()) id = setInterval(() => setInstallStep((s) => Math.min(4, s + 1)), 500)
+  try { if (!isNative()) await new Promise((r) => setTimeout(r, 2600)); setSnapshot(await invoke('code.install', { acceptNewProfile: true })); setInstallStep(5); notify(isNative() ? '隔离环境准备完成，请启动终端完成官方授权。' : '安装流程演示完成；没有在电脑上安装软件。') } catch (e) { setInstallStep(-1); notify((e as Error).message) } finally { if (id) clearInterval(id); setBusy('') } }
+ const startCode = () => { navigate('code'); if (!snapshot?.profile) setWarning(true); else void install() }
+ const openBrowser = () => { if (snapshot?.network.phase !== 'ready') { navigate('connection'); notify('先配置一次全局连接，网页端和 Code 都会使用它。') } else { navigate('browser'); void run('browser.start') } }
+ if (!snapshot) return <div className="loading"><Loader2 className="spin" />正在打开工作空间…</div>
+ const ready = snapshot.network.phase === 'ready'; const running = snapshot.browser.phase === 'running'; const codeRunning = snapshot.code.phase === 'running'
+ const data = snapshot.browser.observation || snapshot.network.observation
+ const pending = (text: string) => notify(text)
+ return <>
+  <div className="preview-ribbon"><span><i />{isNative() ? '开发体验版' : '设计预览 · 所有连接与运行状态均为示例'}</span><div>{!isNative() && <button onClick={() => void run('demo.reset')}><RotateCcw size={13} />重置体验</button>}<button aria-label={`切换${theme === 'dark' ? '浅色' : '深色'}主题`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button></div></div>
+  <div className="app-shell"><aside className="sidebar"><a className="brand" href="#" onClick={(e) => { e.preventDefault(); navigate('home') }}><ClaudeIcon /><span>claude<span className="brand-suffix">FF</span></span></a>
+   <span className="nav-label">个人工作空间</span><nav aria-label="主导航">
+    <button aria-label="概览" onClick={() => navigate('home')} className={page === 'home' ? 'active' : ''}><Home size={18} /><span>概览</span></button>
+    <button aria-label="Claude.ai" onClick={() => navigate('browser')} className={page === 'browser' ? 'active' : ''}><ClaudeIcon /><span>Claude.ai</span></button>
+    <button aria-label="Claude Code" onClick={() => navigate('code')} className={page === 'code' ? 'active' : ''}><ClaudeIcon /><span>Claude Code</span></button>
+    <button onClick={() => pending('Claude 桌面客户端正在开发中，本期先完成网页端和 Code。')}><ClaudeIcon /><span>Claude 桌面版</span><small>开发中</small></button>
+    <div className="nav-divider" /><button aria-label="全局连接" onClick={() => navigate('connection')} className={page === 'connection' ? 'active' : ''}><Network size={18} /><span>全局连接</span></button><button aria-label="设置" onClick={() => navigate('settings')} className={page === 'settings' ? 'active' : ''}><Settings2 size={18} /><span>设置</span></button>
+   </nav><div className="sidebar-bottom"><div className="single-profile"><span className="profile-avatar">我</span><div><strong>我的 Claude 空间</strong><span>单账号 · 本地环境</span></div></div><p>第三方工具 · 非 Anthropic 官方产品</p></div></aside>
+   <main className="main"><header className="topbar"><span>{names[page]}</span><button onClick={() => setAuth(true)} className="identity-button">开发体验<ChevronDown size={14} /></button></header>
+    <div className="page-content">
+    {page === 'home' && <><div className="home-heading"><div className="eyebrow">你的个人 Claude 工作空间</div><h1>一个环境，从容开始。</h1><p>网页对话与终端编程，沿用同一份连接和环境配置。</p></div>
+     <button className="connection-strip" onClick={() => navigate('connection')}><span className={`connection-dot ${ready ? 'ready' : ''}`} /><div><strong>{ready ? '全局连接已准备' : '先准备你的连接'}</strong><span>{ready ? `${snapshot.network.observation?.ip} · 网页端与 Code 共用` : '添加一次代理，两个入口自动共用。'}</span></div><span className="strip-action">{ready ? '查看连接' : '添加代理'}<ChevronRight size={17} /></span></button>
+     <div className="product-grid"><section className="product-card browser-card"><div className="product-heading"><ClaudeIcon large /><span className="tag">网页端</span></div><h2>Claude.ai</h2><p>熟悉的浏览器体验。<br />独立保存登录、密码与浏览记录。</p><div className="mini-browser" aria-hidden="true"><div className="mini-tabs"><span><Globe2 size={12} />环境信息</span><span><ClaudeIcon />Claude.ai</span></div><div className="mini-address"><ShieldCheck size={12} />claude.ai</div><div className="mini-page"><ClaudeIcon large /><span>你的独立浏览空间</span><small>稳定配置，继续上次的工作</small></div></div><div className="product-action"><Button onClick={openBrowser} disabled={!!busy}>{running ? '回到浏览器' : '打开 Claude.ai'}<ArrowRight size={16} /></Button><button onClick={() => navigate('browser')}>了解环境<ChevronRight size={14} /></button></div></section>
+      <section className="product-card code-card"><div className="product-heading"><ClaudeIcon large /><span className="tag">终端编程</span></div><h2>Claude Code</h2><p>从安装到隔离运行，一起准备好。<br />自动沿用浏览器的适用环境配置。</p><div className="mini-terminal" aria-hidden="true"><div><TerminalSquare size={14} />claude — WSL2</div><pre><span>❯</span> claude{'\n\n'}<b>Claude Code</b>{'\n'}<span>独立项目空间 / 共用代理出口</span>{'\n\n'}<i>▍</i></pre></div><div className="product-action"><Button variant="secondary" onClick={() => snapshot.code.phase === 'ready' || codeRunning ? navigate('code') : startCode()} disabled={!!busy}>{snapshot.code.phase === 'ready' || codeRunning ? '进入 Code' : '安装并设置'}<ArrowRight size={16} /></Button><span className="quiet">WSL2 强隔离</span></div></section></div>
+     <section className="desktop-placeholder"><ClaudeIcon /><div><h3>Claude 桌面客户端</h3><p>稍后加入你的工作空间</p></div><span className="tag">正在开发中</span></section><footer className="home-footer"><span>一个账号，一份稳定配置。</span><button onClick={() => setDetails(true)}>查看指纹信息<ChevronRight size={14} /></button></footer>
+    </>}
+    {page === 'browser' && <><PageTitle title="你的浏览器环境" description="一次配置，保留每次使用的熟悉感。" /><div className="page-actions"><Button onClick={openBrowser} disabled={!!busy}>{busy === 'browser.start' ? <Loader2 className="spin" size={16} /> : <Globe2 size={16} />}{running ? '激活浏览器' : '创建并打开浏览器'}</Button>{running && <Button variant="secondary" onClick={() => void run('browser.stop')} disabled={!!busy}><Square size={14} />关闭浏览器</Button>}<Button variant="ghost" onClick={() => setDetails(true)}>高级指纹信息<ChevronRight size={15} /></Button>{isNative() && !snapshot.kernel && <Button variant="secondary" onClick={() => void run('kernel.install')} disabled={!!busy}><Download size={15} />下载浏览器内核</Button>}</div>
+     <div className="browser-preview"><div className="browser-tabs"><button className={browserTab === 'start' ? 'selected' : ''} onClick={() => setBrowserTab('start')}><Globe2 size={15} />环境信息</button><button className={browserTab === 'claude' ? 'selected' : ''} onClick={() => setBrowserTab('claude')}><ClaudeIcon />Claude.ai</button></div><div className="browser-address"><ShieldCheck size={14} /><span>{browserTab === 'start' ? 'claudeFF / 环境信息' : 'https://claude.ai/'}</span><span>启动页预览</span></div>
+      {browserTab === 'start' ? <div className="start-page"><ClaudeIcon large /><h2>你的环境，一目了然。</h2><p>{snapshot.profile ? '稳定配置已保存，浏览器和 Code 按适用范围沿用。' : '创建环境后，这里显示当前连接与指纹信息。'}</p><div className="start-properties"><Property label="出口 IP" value={data?.ip || '等待检测'} /><Property label="连接" value={data ? (isNative() ? snapshot.browser.message : '示例结果') : '未检测'} /><Property label="语言" value={snapshot.profile?.language || '自动 / 待创建'} /><Property label="时区" value={snapshot.profile?.timezone || '待配置'} /><Property label="环境标识" value={snapshot.profile?.id || '尚未创建'} /><Property label="内核" value={snapshot.kernel ? 'fingerprint-chromium' : '尚未下载'} /></div><button onClick={() => setDetails(true)} className="text-button">查看详细指纹<ArrowRight size={16} /></button><small>{isNative() ? '此处是管理界面摘要；受管浏览器的真实启动页在独立窗口中打开。' : '页面中为示例，未启动真实浏览器。'}</small></div> : <div className="start-page claude-tab"><ClaudeIcon large /><h2>Claude.ai，直接打开。</h2><p>正式客户端会在指纹浏览器的第二个标签页打开官网。<br />正常浏览、记住密码，继续上次的对话。</p><Button onClick={openBrowser}>打开受管浏览器<ExternalLink size={16} /></Button><small>网页预览不会为当前浏览器配置代理。</small></div>}
+     </div><p className="below-note">浏览器数据仅保存在你的电脑。关闭窗口不会清空登录、密码或历史。</p></>}
+    {page === 'code' && <><PageTitle title="把编程环境准备好。" description="安装官方 Claude Code，运行在独立 WSL2 环境中。" /><div className="code-layout"><section className="panel code-setup"><div className="section-icon"><ShieldCheck size={22} /></div><h2>{snapshot.profile ? '沿用现有环境' : '从一个独立环境开始'}</h2><p>{snapshot.profile ? `配置 ${snapshot.profile.id} · 全局连接自动复用` : '也可以单独使用 Code。创建前会提醒与你原有网页环境的差异。'}</p><ol className="install-steps">{steps.map((s, i) => <li key={s} className={installStep > i || snapshot.code.phase === 'ready' || codeRunning ? 'complete' : installStep === i ? 'current' : ''}><span>{installStep > i || snapshot.code.phase === 'ready' || codeRunning ? <Check size={14} /> : installStep === i ? <Loader2 className="spin" size={14} /> : i + 1}</span><div>{s}<small>{i === 2 ? '同步语言、时区和连接；浏览器专属指纹不复制到 CLI' : i === 0 ? '独立系统空间，仅开放选定项目' : i === 3 ? '失败时停止，不回退到本机直接运行' : ''}</small></div></li>)}</ol>
+       {busy === 'code.install' ? <p className="install-message" role="status">{isNative() ? snapshot.code.message : '正在下载安装，并同步浏览器环境配置，尽量保持环境和设备信息一致。'}</p> : <><Button onClick={snapshot.code.phase === 'ready' || codeRunning ? () => void run(codeRunning ? 'code.stop' : 'code.start') : startCode} disabled={!!busy}>{codeRunning ? '停止终端' : snapshot.code.phase === 'ready' ? '启动终端' : snapshot.code.phase === 'failed' ? '重试准备环境' : '安装并同步环境'}<ArrowRight size={16} /></Button>{snapshot.code.phase === 'failed' && <p className="error-copy" role="alert">{snapshot.code.message}</p>}</>}
+       <button className="text-button" onClick={() => void run('project.choose')}><FolderOpen size={15} />选择项目目录</button>{!isNative() && <button className="text-button" onClick={() => void run('demo.fail')}>体验安装失败状态</button>}</section><section className="terminal-card"><div className="terminal-header"><TerminalSquare size={16} /><span>Claude Code</span><span className="terminal-status">{codeRunning ? '运行中' : '待启动'}</span></div><TerminalPane running={codeRunning} /><div className="terminal-footer"><ShieldCheck size={14} /><span>WSL2 强隔离</span><span>共用全局代理</span></div></section></div><div className="panel slim-panel"><Info size={18} /><p>首次安装可能需要启用 WSL2、系统确认或重启。Claude Code 的官方登录在终端内完成，浏览器登录不会自动复制。</p></div></>}
+    {page === 'connection' && <><PageTitle title="一次连接，两个入口。" description="浏览器和 Code 自动共用这份代理，不需要重复设置。" /><div className="connection-layout"><form className="panel connection-form" onSubmit={(e) => { e.preventDefault(); void run('proxy.save', { ...proxy, password, keepPassword }).then(() => setPassword('')) }}><h2>你的代理</h2><p>使用代理商提供的网关信息。</p><label className="field">代理地址<input required autoComplete="off" placeholder="proxy.example.com" value={proxy.host} onChange={(e) => setProxy({ ...proxy, host: e.target.value })} /></label><div className="form-pair"><label className="field">端口<input required type="number" min={1} max={65535} value={proxy.port} onChange={(e) => setProxy({ ...proxy, port: Number(e.target.value) })} /></label><label className="field">协议<select value={proxy.protocol} onChange={(e) => setProxy({ ...proxy, protocol: e.target.value })}><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option></select></label></div><details className="advanced"><summary>用户名与密码<ChevronDown size={16} /></summary><label className="field">代理用户名<input autoComplete="off" value={proxy.username} onChange={(e) => setProxy({ ...proxy, username: e.target.value })} /></label><label className="field">代理密码<input type="password" autoComplete="new-password" placeholder={snapshot.hasPassword ? '已安全保存，留空保留' : '没有则留空'} value={password} onChange={(e) => { setPassword(e.target.value); setKeepPassword(false) }} /></label>{snapshot.hasPassword && <label className="checkbox-field"><input type="checkbox" checked={keepPassword} onChange={(e) => setKeepPassword(e.target.checked)} />保留已保存的密码</label>}</details><div className="form-actions"><Button type="submit" disabled={!!busy}>保存全局代理</Button><Button variant="secondary" disabled={!!busy || !snapshot.proxy.host} onClick={() => void run('proxy.check')}>{busy === 'proxy.check' ? <Loader2 className="spin" size={16} /> : <RotateCcw size={16} />}检测连接</Button></div><p className="field-note">修改会影响两个入口，旧连接验证将失效。正在运行时先停止浏览器和终端。</p></form><section className="panel connection-result"><span className="eyebrow">连接状态</span><div className={`connection-status ${ready ? 'connected' : ''}`}><Network size={28} /><h2>{ready ? '连接已准备' : '等待检测'}</h2><p>{snapshot.network.message}</p></div><dl className="property-list"><Property label="实际出口" value={snapshot.network.observation?.ip || '未检测'} /><Property label="响应时间" value={snapshot.network.observation ? `${snapshot.network.observation.latency} ms` : '—'} /><Property label="住宅属性" value="未验证" /><Property label="网页端" value={running ? snapshot.browser.message : '未启动'} /><Property label="Claude Code" value={snapshot.code.message} /></dl><span className="shared-label"><Check size={14} />应用唯一代理 · 两端共用</span></section></div></>}
+    {page === 'settings' && <><PageTitle title="按你的习惯调整。" description="常用设置保持简单，详细信息随时可查。" /><section className="panel settings-panel"><div className="setting-row"><div><h3>外观</h3><p>选择更舒适的明暗。</p></div><div className="segmented"><button aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><Sun size={15} />浅色</button><button aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}><Moon size={15} />深色</button></div></div><button className="setting-row setting-link" onClick={() => setDetails(true)}><div><h3>高级指纹信息</h3><p>查看环境参数、支持范围与实际应用状态。</p></div><ChevronRight size={18} /></button><div className="setting-row"><div><h3>环境语言与时区</h3><p>应用于两端适用配置。修改前须停止运行。</p></div></div><div className="form-pair settings-fields"><label className="field">语言<select value={language} onChange={(e) => setLanguage(e.target.value)}><option>en-US</option><option>zh-CN</option><option>en-GB</option><option>ja-JP</option></select></label><label className="field">时区<select value={timezone} onChange={(e) => setTimezone(e.target.value)}><option>UTC</option><option>America/Los_Angeles</option><option>Asia/Shanghai</option><option>Asia/Tokyo</option><option>Europe/London</option></select></label><Button variant="secondary" onClick={() => void run('profile.save', { language, timezone })} disabled={!!busy || !snapshot.profile}>保存环境设置</Button></div><div className="setting-row"><div><h3>本地数据</h3><p>{snapshot.dataDir}</p></div><Button variant="ghost" onClick={() => void run('data.open')}>查看目录<FolderOpen size={15} /></Button></div><div className="setting-row"><div><h3>清理临时缓存</h3><p>保留密码、登录、历史与项目。</p></div><Button variant="secondary" onClick={() => void run('cache.clear')} disabled={!!busy}>清理缓存</Button></div><div className="setting-row"><div><h3>claudeFF</h3><p>0.2 · 开发体验版 · 商业授权最后接入</p></div><ClaudeIcon /></div></section></>}
+    </div></main></div>
+  <Modal open={warning} onClose={() => setWarning(false)} title="单独准备 Claude Code？" description="直接创建 Claude Code 环境，可能与该账号原有网页端的环境信息不同；若代理 IP 也不同，会增加环境差异。建议优先沿用原有浏览器环境，保持一致。"><div className="modal-actions"><Button variant="secondary" onClick={() => { setWarning(false); navigate('browser') }}>先配置浏览器环境</Button><Button onClick={() => void install()}>了解差异，继续设置 Code</Button></div></Modal>
+  <Modal open={details} onClose={() => setDetails(false)} title="高级指纹与环境信息" description="稳定配置与实际验证分开显示；浏览器和 CLI 保留各自平台差异。"><dl className="property-list fingerprint-list"><Property label="环境标识 / 版本" value={snapshot.profile ? `${snapshot.profile.id} / ${snapshot.profile.revision}` : '未创建'} /><Property label="指纹种子" value={snapshot.profile?.seed || '待生成'} /><Property label="语言 / 时区" value={snapshot.profile ? `${snapshot.profile.language} / ${snapshot.profile.timezone}` : '待配置'} /><Property label="浏览器平台" value="Windows / Chromium" /><Property label="Code 平台" value="WSL2 / Linux，非 Windows 指纹复制" /><Property label="User-Agent / UA-CH" value="以实际内核观测为准，等待浏览器核验" /><Property label="Canvas / Audio / Fonts" value="内核稳定种子，需实际验证" /><Property label="WebGL / 屏幕 / CPU" value="浏览器专属，等待内核观测" /><Property label="WebRTC / DNS / IPv6" value="禁止非代理出站，需链路实测" /><Property label="Code 同步项" value="全局代理、语言、时区、配置来源" /><Property label="住宅属性" value="未验证" /></dl><div className="modal-actions"><Button onClick={() => setDetails(false)}>完成</Button></div></Modal>
+  <Modal open={auth} onClose={() => setAuth(false)} title={register ? '创建产品账号' : '进入工作空间'} description="开发模式：任意输入即可继续，不联网验证。与 Claude 官方登录分开。"><div className="segmented"><button aria-pressed={!register} onClick={() => setRegister(false)}>登录</button><button aria-pressed={register} onClick={() => setRegister(true)}>注册</button></div><form onSubmit={(e) => { e.preventDefault(); setAuth(false); notify('已进入开发体验，未创建真实账号。') }}><label className="field">用户名<input autoComplete="off" defaultValue="体验用户" /></label><label className="field">密码<input type="password" autoComplete="off" placeholder="任意内容" /></label>{register && <label className="field">确认密码<input type="password" autoComplete="off" /></label>}<div className="modal-actions"><Button type="submit">进入工作空间<ArrowRight size={15} /></Button></div></form></Modal>
+  {toast && <div className="toast" role="status"><Info size={18} /><span>{toast}</span><button aria-label="关闭提示" onClick={() => setToast('')}><X size={16} /></button></div>}
+ </>
 }
+function PageTitle({ title, description }: { title: string; description: string }) { return <div className="page-title"><h1>{title}</h1><p>{description}</p></div> }
+function Property({ label, value }: { label: string; value: string }) { return <div className="property"><dt>{label}</dt><dd>{value}</dd></div> }
