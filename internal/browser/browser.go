@@ -146,13 +146,18 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 }
 func (m *Manager) Stop() {
 	m.mu.Lock()
-	cancel, alloc, server := m.cancel, m.allocatorCancel, m.server
+	cancel, alloc, server, ctx := m.cancel, m.allocatorCancel, m.server, m.ctx
 	m.cancel = nil
 	m.ctx = nil
 	m.allocatorCancel = nil
 	m.server = nil
 	m.observed = nil
 	m.mu.Unlock()
+	if ctx != nil {
+		graceful, done := context.WithTimeout(ctx, 5*time.Second)
+		chromedp.Cancel(graceful)
+		done()
+	}
 	if cancel != nil {
 		cancel()
 	}

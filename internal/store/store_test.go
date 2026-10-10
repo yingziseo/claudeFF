@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"github.com/yingziseo/claudeFF/internal/model"
 	"testing"
 )
@@ -40,7 +41,7 @@ func TestPersistenceAndSingleProfile(t *testing.T) {
 	}
 	var raw []byte
 	s.db.QueryRow("SELECT proxy FROM settings").Scan(&raw)
-	if string(raw) == p.Password {
+	if bytes.Contains(raw, []byte(p.Password)) {
 		t.Fatal("raw secret")
 	}
 	_, e = s.SaveProxy(p)
@@ -50,5 +51,18 @@ func TestPersistenceAndSingleProfile(t *testing.T) {
 	_, r, _ = s.Proxy()
 	if r != 2 {
 		t.Fatal("revision not incremented")
+	}
+}
+
+func TestFutureSchemaIsNotOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	s, e := Open(dir, fakeVault{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.db.Exec("PRAGMA user_version=99")
+	s.Close()
+	if _, e = Open(dir, fakeVault{}); e == nil {
+		t.Fatal("newer schema accepted")
 	}
 }

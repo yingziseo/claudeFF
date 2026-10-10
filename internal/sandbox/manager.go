@@ -238,7 +238,9 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 				m.set("failed", text)
 				signal(errors.New(text))
 			case "exit":
-				m.set("ready", text)
+				if m.State().Phase != "failed" {
+					m.set("ready", text)
+				}
 			}
 		}
 		e := cmd.Wait()

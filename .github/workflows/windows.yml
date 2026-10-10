@@ -53,6 +53,16 @@ jobs:
       - run: go test ./internal/...
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
       - run: wails build -platform windows/amd64 -skipbindings -s
+      - name: Windows GUI process smoke
+        shell: pwsh
+        run: |
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP 'claudeff-smoke'
+          $process = Start-Process 'build/bin/claudeFF.exe' -PassThru
+          Start-Sleep -Seconds 8
+          $process.Refresh()
+          if ($process.HasExited) { throw "Windows client exited during startup (code $($process.ExitCode))" }
+          "Windows process survived startup; PID $($process.Id). This does not prove rendered UI or WSL behavior."
+          Stop-Process -Id $process.Id -Force
       - uses: actions/download-artifact@v4
         with:
           name: sandbox-agent

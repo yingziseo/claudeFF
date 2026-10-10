@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -179,6 +180,37 @@ func run() error {
 			}
 			if e != nil {
 				return
+			}
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		if cmd.Process != nil {
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				q := exec.CommandContext(ctx, "runuser", "-u", "claudeff", "--", "/bin/bash", "/opt/claudeff/launch.sh", "/usr/bin/curl", "--fail", "--silent", "--max-time", "20", proxy.DetectionURL)
+				q.Env = env
+				data, err := q.Output()
+				var observed struct {
+					IP string `json:"ip"`
+				}
+				if err == nil {
+					err = json.Unmarshal(data, &observed)
+				}
+				if err != nil || observed.IP != result.IP {
+					emit("error", "运行中出口检测失败或发生变化，已停止隔离终端")
+					cancel()
+					return
+				}
 			}
 		}
 	}()

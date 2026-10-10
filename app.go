@@ -21,16 +21,17 @@ import (
 )
 
 type App struct {
-	ctx          context.Context
-	root, bundle string
-	db           *store.Store
-	browser      browser.Manager
-	code         *sandbox.Manager
-	relay        *proxy.Relay
-	network      model.Status
-	mu           sync.Mutex
-	operation    sync.Mutex
-	initErr      error
+	ctx           context.Context
+	root, bundle  string
+	db            *store.Store
+	browser       browser.Manager
+	code          *sandbox.Manager
+	relay         *proxy.Relay
+	network       model.Status
+	mu            sync.Mutex
+	operation     sync.Mutex
+	initErr       error
+	cancelInstall context.CancelFunc
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -181,6 +182,12 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	}
 	// Stop/cancel can interrupt installation without acquiring its operation lock.
 	if action == "code.stop" {
+		a.mu.Lock()
+		cancel := a.cancelInstall
+		a.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
 		a.code.Stop()
 		return a.snapshot()
 	}
@@ -270,6 +277,12 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		p.Revision++
 		e = a.db.SaveProfile(*p)
 	case "code.install":
+		installCtx, cancel := context.WithTimeout(a.ctx, 25*time.Minute)
+		defer cancel()
+		a.mu.Lock()
+		a.cancelInstall = cancel
+		a.mu.Unlock()
+		defer func() { a.mu.Lock(); a.cancelInstall = nil; a.mu.Unlock() }()
 		if e = a.check(); e != nil {
 			break
 		}
@@ -302,7 +315,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		}
 		client := proxy.ClientThrough(a.relay.URL())
 		client.Timeout = 20 * time.Minute
-		if e = a.code.Prepare(a.ctx, client); e != nil {
+		if e = a.code.Prepare(installCtx, client); e != nil {
 			a.code.Fail(e)
 			break
 		}
@@ -311,12 +324,12 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		if e != nil {
 			break
 		}
-		e = a.code.Launch(a.ctx, "install", proxyConfig, *p, o)
+		e = a.code.Launch(installCtx, "install", proxyConfig, *p, o)
 		if e != nil {
 			a.code.Fail(e)
 			break
 		}
-		if e = a.code.Restart(a.ctx); e != nil {
+		if e = a.code.Restart(installCtx); e != nil {
 			break
 		}
 		e = a.code.MarkInstalled()

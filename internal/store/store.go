@@ -31,6 +31,16 @@ func Open(dir string, p Protector) (*Store, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(1)
+	var version int
+	if e = db.QueryRow("PRAGMA user_version").Scan(&version); e != nil {
+		db.Close()
+		return nil, e
+	}
+	if version > 1 {
+		db.Close()
+		return nil, errors.New("数据库来自更新版本，请使用对应客户端；未覆盖数据")
+	}
+
 	if _, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), proxy BLOB NOT NULL, secret BLOB, revision INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL);
