@@ -88,3 +88,9 @@ test('窄屏导航保持文字含义，键盘跳转与减少动画', async ({ pa
  await page.keyboard.press('Enter'); await expect(page.locator('#workspace-main')).toBeFocused()
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('桌面数据读取失败给出恢复入口，避免永久转圈', async ({ page }) => {
+ await page.addInitScript(() => { window.go = { main: { App: { Invoke: async () => { throw new Error('测试：本地数据目录不可写') } } } } })
+ await page.goto('./'); await expect(page.getByRole('heading', { name: '工作空间暂时无法打开' })).toBeVisible()
+ await expect(page.getByRole('alert')).toContainText('本地数据目录不可写'); await expect(page.getByRole('button', { name: '重试读取' })).toBeVisible()
+})

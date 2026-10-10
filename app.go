@@ -110,7 +110,8 @@ func (a *App) snapshot() (string, error) {
 		return string(raw), nil
 	}
 	p, revision, e := a.db.Proxy()
-	if e != nil {
+	secretUnavailable := errors.Is(e, store.ErrSecretUnavailable)
+	if e != nil && !secretUnavailable {
 		return "", e
 	}
 	profile, e := a.db.Profile()
@@ -121,6 +122,9 @@ func (a *App) snapshot() (string, error) {
 	a.mu.Lock()
 	network := a.network
 	a.mu.Unlock()
+	if secretUnavailable {
+		network = model.Status{Phase: "failed", Message: store.ErrSecretUnavailable.Error()}
+	}
 	cs := a.code.State()
 	if network.Observation != nil && time.Since(network.Observation.At) > 5*time.Minute {
 		var active *model.Observation

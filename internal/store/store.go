@@ -12,6 +12,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+var ErrSecretUnavailable = errors.New("无法解密代理秘密，请在原 Windows 用户下运行或重新配置")
+
 type Protector interface {
 	Protect([]byte) ([]byte, error)
 	Unprotect([]byte) ([]byte, error)
@@ -72,7 +74,7 @@ func (s *Store) Proxy() (model.Proxy, int, error) {
 	if len(enc) > 0 {
 		b, e := s.protector.Unprotect(enc)
 		if e != nil {
-			return p, rev, errors.New("无法解密代理秘密，请在原 Windows 用户下运行或重新配置")
+			return p, rev, ErrSecretUnavailable
 		}
 		p.Password = string(b)
 	}
