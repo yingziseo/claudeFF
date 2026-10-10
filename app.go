@@ -1,0 +1,380 @@
+//go:build windows
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/yingziseo/claudeFF/internal/browser"
+	"github.com/yingziseo/claudeFF/internal/model"
+	"github.com/yingziseo/claudeFF/internal/proxy"
+	"github.com/yingziseo/claudeFF/internal/sandbox"
+	"github.com/yingziseo/claudeFF/internal/secret"
+	"github.com/yingziseo/claudeFF/internal/store"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type App struct {
+	ctx          context.Context
+	root, bundle string
+	db           *store.Store
+	browser      browser.Manager
+	code         *sandbox.Manager
+	relay        *proxy.Relay
+	network      model.Status
+	mu           sync.Mutex
+	operation    sync.Mutex
+	initErr      error
+}
+
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	base, e := os.UserConfigDir()
+	if e != nil {
+		a.initErr = e
+		return
+	}
+	a.root = filepath.Join(base, "claudeFF")
+	exe, _ := os.Executable()
+	a.bundle = filepath.Dir(exe)
+	a.db, a.initErr = store.Open(a.root, secret.Vault{})
+	if a.initErr != nil {
+		return
+	}
+	a.network = model.Status{Phase: "idle", Message: "请检测全局代理"}
+	a.code = sandbox.New(a.root, a.bundle, func(event, data string) { runtime.EventsEmit(a.ctx, event, data) })
+	if a.code.Installed() {
+		a.code.RestoreReady()
+	}
+}
+func (a *App) shutdown(ctx context.Context) {
+	a.browser.Stop()
+	if a.code != nil {
+		a.code.Stop()
+	}
+	if a.relay != nil {
+		a.relay.Close()
+	}
+	if a.db != nil {
+		a.db.Close()
+	}
+}
+func (a *App) beforeClose(ctx context.Context) bool {
+	bs, _ := a.browser.State()
+	cs := a.code.State()
+	locked := a.operation.TryLock()
+	if locked {
+		a.operation.Unlock()
+	}
+	if bs.Phase == "running" || cs.Phase == "running" || !locked {
+		choice, _ := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{Type: runtime.QuestionDialog, Title: "退出工作空间？", Message: "正在使用的浏览器或终端将关闭。请先保存工作。", Buttons: []string{"继续工作", "退出并关闭"}, DefaultButton: "继续工作", CancelButton: "继续工作"})
+		return choice != "退出并关闭"
+	}
+	return false
+}
+func (a *App) snapshot() (string, error) {
+	if a.initErr != nil {
+		return "", errors.New("本地数据初始化失败，请检查目录权限")
+	}
+	p, revision, e := a.db.Proxy()
+	if e != nil {
+		return "", e
+	}
+	profile, e := a.db.Profile()
+	if e != nil {
+		return "", e
+	}
+	bs, observed := a.browser.State()
+	a.mu.Lock()
+	network := a.network
+	a.mu.Unlock()
+	s := model.Snapshot{Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
+	raw, e := json.Marshal(struct {
+		model.Snapshot
+		Fingerprint map[string]any `json:"fingerprint"`
+	}{s, observed})
+	return string(raw), e
+}
+func (a *App) check() error {
+	p, rev, e := a.db.Proxy()
+	if e != nil {
+		return e
+	}
+	a.mu.Lock()
+	a.network = model.Status{Phase: "busy", Message: "正在通过全局代理检测出口"}
+	a.mu.Unlock()
+	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
+	defer cancel()
+	o, e := proxy.Detect(ctx, p, rev)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if e != nil {
+		a.network = model.Status{Phase: "failed", Message: e.Error()}
+		return e
+	}
+	a.network = model.Status{Phase: "ready", Message: "全局代理出口已检测", Observation: o}
+	return nil
+}
+func (a *App) relayReady() error {
+	if a.relay != nil {
+		return nil
+	}
+	p, _, e := a.db.Proxy()
+	if e != nil {
+		return e
+	}
+	a.relay, e = proxy.Start(p, "")
+	return e
+}
+func (a *App) currentObservation() (*model.Observation, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.network.Phase != "ready" || a.network.Observation == nil {
+		return nil, errors.New("请先检测全局代理")
+	}
+	if time.Since(a.network.Observation.At) > 5*time.Minute {
+		return nil, errors.New("连接验证已过期，请重新检测")
+	}
+	o := *a.network.Observation
+	return &o, nil
+}
+func (a *App) stopped() error {
+	bs, _ := a.browser.State()
+	cs := a.code.State()
+	if bs.Phase == "running" || cs.Phase == "running" || cs.Phase == "busy" {
+		return errors.New("请先停止浏览器和终端，再修改共享设置")
+	}
+	return nil
+}
+func (a *App) Invoke(action, payload string) (string, error) {
+	if a.initErr != nil {
+		return "", a.initErr
+	}
+	if len(payload) > 2<<20 {
+		return "", errors.New("请求过大")
+	}
+	if action == "snapshot" {
+		return a.snapshot()
+	}
+	if action == "terminal.write" {
+		var p struct {
+			Data string `json:"data"`
+		}
+		if e := json.Unmarshal([]byte(payload), &p); e != nil {
+			return "", e
+		}
+		return "{}", a.code.Write(p.Data)
+	}
+	if action == "terminal.resize" {
+		var p struct{ Cols, Rows int }
+		json.Unmarshal([]byte(payload), &p)
+		return "{}", a.code.Resize(p.Cols, p.Rows)
+	}
+	// Stop/cancel can interrupt installation without acquiring its operation lock.
+	if action == "code.stop" {
+		a.code.Stop()
+		return a.snapshot()
+	}
+	if !a.operation.TryLock() {
+		return "", errors.New("另一项操作正在执行，请等待或停止隔离操作")
+	}
+	defer a.operation.Unlock()
+	var e error
+	switch action {
+	case "proxy.save":
+		if e = a.stopped(); e != nil {
+			break
+		}
+		var p struct {
+			model.Proxy
+			KeepPassword bool `json:"keepPassword"`
+		}
+		if e = json.Unmarshal([]byte(payload), &p); e != nil {
+			break
+		}
+		if p.KeepPassword && p.Password == "" {
+			old, _, err := a.db.Proxy()
+			if err != nil {
+				e = err
+				break
+			}
+			p.Password = old.Password
+		}
+		if _, e = a.db.SaveProxy(p.Proxy); e != nil {
+			break
+		}
+		if a.relay != nil {
+			a.relay.Close()
+			a.relay = nil
+		}
+		a.mu.Lock()
+		a.network = model.Status{Phase: "idle", Message: "配置已更新，请重新检测"}
+		a.mu.Unlock()
+	case "proxy.check":
+		e = a.check()
+	case "kernel.install":
+		if e = a.relayReady(); e != nil {
+			break
+		}
+		client := proxy.ClientThrough(a.relay.URL())
+		client.Timeout = 20 * time.Minute
+		_, e = browser.Install(a.ctx, client, filepath.Join(a.root, "kernel"))
+	case "browser.start":
+		if e = a.check(); e != nil {
+			break
+		}
+		var o *model.Observation
+		o, e = a.currentObservation()
+		if e != nil {
+			break
+		}
+		if e = a.relayReady(); e != nil {
+			break
+		}
+		var p *model.Profile
+		p, e = a.db.EnsureProfile("browser")
+		if e != nil {
+			break
+		}
+		e = a.browser.Start(a.ctx, browser.Find(filepath.Join(a.root, "kernel")), a.root, a.relay.URL(), *p, o)
+	case "browser.stop":
+		a.browser.Stop()
+	case "profile.save":
+		if e = a.stopped(); e != nil {
+			break
+		}
+		var p *model.Profile
+		p, e = a.db.Profile()
+		if e != nil {
+			break
+		}
+		if p == nil {
+			e = errors.New("请先创建环境")
+			break
+		}
+		var fields struct{ Language, Timezone string }
+		if e = json.Unmarshal([]byte(payload), &fields); e != nil {
+			break
+		}
+		p.Language = fields.Language
+		p.Timezone = fields.Timezone
+		p.Revision++
+		e = a.db.SaveProfile(*p)
+	case "code.install":
+		if e = a.check(); e != nil {
+			break
+		}
+		var o *model.Observation
+		o, e = a.currentObservation()
+		if e != nil {
+			break
+		}
+		var p *model.Profile
+		p, e = a.db.Profile()
+		if e != nil {
+			break
+		}
+		if p == nil {
+			var consent struct {
+				AcceptNewProfile bool `json:"acceptNewProfile"`
+			}
+			json.Unmarshal([]byte(payload), &consent)
+			if !consent.AcceptNewProfile {
+				e = errors.New("请先确认直接创建环境的差异提示")
+				break
+			}
+			p, e = a.db.EnsureProfile("code")
+			if e != nil {
+				break
+			}
+		}
+		if e = a.relayReady(); e != nil {
+			break
+		}
+		client := proxy.ClientThrough(a.relay.URL())
+		client.Timeout = 20 * time.Minute
+		if e = a.code.Prepare(a.ctx, client); e != nil {
+			a.code.Fail(e)
+			break
+		}
+		var proxyConfig model.Proxy
+		proxyConfig, _, e = a.db.Proxy()
+		if e != nil {
+			break
+		}
+		e = a.code.Launch(a.ctx, "install", proxyConfig, *p, o)
+		if e != nil {
+			a.code.Fail(e)
+			break
+		}
+		if e = a.code.Restart(a.ctx); e != nil {
+			break
+		}
+		e = a.code.MarkInstalled()
+		a.code.RestoreReady()
+	case "system.enableWSL":
+		e = sandbox.Enable()
+	case "code.start":
+		if !a.code.Installed() {
+			e = errors.New("请先完成 Code 安装")
+			break
+		}
+		if e = a.check(); e != nil {
+			break
+		}
+		var o *model.Observation
+		o, e = a.currentObservation()
+		if e != nil {
+			break
+		}
+		var p *model.Profile
+		p, e = a.db.Profile()
+		if e != nil || p == nil {
+			e = errors.New("缺少稳定环境配置")
+			break
+		}
+		var pc model.Proxy
+		pc, _, e = a.db.Proxy()
+		if e != nil {
+			break
+		}
+		e = a.code.Launch(a.ctx, "run", pc, *p, o)
+	case "project.choose":
+		if e = a.stopped(); e != nil {
+			break
+		}
+		if !a.code.Installed() {
+			e = errors.New("请先准备隔离系统，再导入项目")
+			break
+		}
+		var path string
+		path, e = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择导入到隔离系统的项目（源目录不会被改写）"})
+		if e == nil && path != "" {
+			e = a.code.ChooseProject(a.ctx, path)
+		}
+	case "data.open":
+		e = exec.Command("explorer.exe", a.root).Start()
+	case "cache.clear":
+		if e = a.stopped(); e != nil {
+			break
+		}
+		for _, name := range []string{"Cache", "Code Cache", "GPUCache"} {
+			if err := os.RemoveAll(filepath.Join(a.root, "browser-profile", "Default", name)); err != nil {
+				e = err
+				break
+			}
+		}
+	default:
+		e = errors.New("不支持的操作")
+	}
+	if e != nil {
+		return "", e
+	}
+	return a.snapshot()
+}

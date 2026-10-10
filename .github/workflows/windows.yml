@@ -1,0 +1,75 @@
+name: Windows portable client
+on:
+  push:
+    branches: [main]
+    paths: ['*.go', 'go.*', 'wails.json', 'internal/**', 'cmd/**', 'scripts/**', 'frontend/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - run: go mod tidy
+      - run: go build -trimpath -o sandbox/wsl-agent ./cmd/wsl-agent
+      - run: cp scripts/sandbox/*.sh sandbox/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-agent
+          path: sandbox/
+  windows:
+    needs: agent
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CLAUDEFF_DESKTOP: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install --package-lock-only --ignore-scripts
+        working-directory: frontend
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: go mod tidy
+      - run: go test ./internal/...
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+      - run: wails build -platform windows/amd64 -skipbindings -s
+      - uses: actions/download-artifact@v4
+        with:
+          name: sandbox-agent
+          path: build/bin/sandbox
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          Copy-Item docs/Windows运行说明.md build/bin/README.md
+          Copy-Item docs/第三方许可与来源.md build/bin/THIRD-PARTY.md
+          Get-ChildItem build/bin -Recurse -File | ForEach-Object { "$(($_ | Get-FileHash -Algorithm SHA256).Hash)  $($_.FullName.Substring((Resolve-Path 'build/bin').Path.Length + 1))" } | Set-Content build/bin/SHA256SUMS.txt
+          Compress-Archive -Path build/bin/* -DestinationPath claudeFF-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-client
+          retention-days: 30
+          path: |
+            claudeFF-windows-x64.zip
+            go.mod
+            go.sum

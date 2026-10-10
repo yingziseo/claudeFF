@@ -1,0 +1,142 @@
+package browser
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"github.com/chromedp/cdproto/target"
+	"github.com/chromedp/chromedp"
+	"github.com/yingziseo/claudeFF/internal/model"
+	"github.com/yingziseo/claudeFF/internal/proxy"
+	"html/template"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type Manager struct {
+	mu              sync.Mutex
+	cancel          context.CancelFunc
+	ctx             context.Context
+	allocatorCancel context.CancelFunc
+	server          *http.Server
+	status          model.Status
+	observed        map[string]any
+	homepage        string
+}
+
+func (m *Manager) State() (model.Status, map[string]any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data := map[string]any{}
+	for k, v := range m.observed {
+		data[k] = v
+	}
+	return m.status, data
+}
+func (m *Manager) set(s model.Status) { m.mu.Lock(); m.status = s; m.mu.Unlock() }
+func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p model.Profile, expected *model.Observation) error {
+	m.mu.Lock()
+	if m.cancel != nil {
+		m.mu.Unlock()
+		return nil
+	}
+	m.status = model.Status{Phase: "busy", Message: "正在启动并核验浏览器出口"}
+	m.mu.Unlock()
+	if exe == "" {
+		return errors.New("请先下载浏览器内核")
+	}
+	if expected == nil {
+		return errors.New("请先检测全局代理")
+	}
+	dataDir := filepath.Join(root, "browser-profile")
+	if e := os.MkdirAll(dataDir, 0700); e != nil {
+		return e
+	}
+	opts := []chromedp.ExecAllocatorOption{chromedp.ExecPath(exe), chromedp.UserDataDir(dataDir), chromedp.NoFirstRun, chromedp.NoDefaultBrowserCheck, chromedp.Flag("headless", false), chromedp.Flag("proxy-server", relayURL), chromedp.Flag("proxy-bypass-list", "127.0.0.1"), chromedp.Flag("fingerprint", p.Seed), chromedp.Flag("fingerprint-platform", "windows"), chromedp.Flag("lang", p.Language), chromedp.Flag("timezone", p.Timezone), chromedp.Flag("disable-non-proxied-udp", true), chromedp.Flag("disable-quic", true), chromedp.Flag("force-webrtc-ip-handling-policy", "disable_non_proxied_udp"), chromedp.Flag("disable-background-networking", true)}
+	alloc, allocCancel := chromedp.NewExecAllocator(parent, opts...)
+	ctx, cancel := chromedp.NewContext(alloc)
+	m.mu.Lock()
+	m.ctx = ctx
+	m.cancel = cancel
+	m.allocatorCancel = allocCancel
+	m.mu.Unlock()
+	fail := func(e error) error { m.Stop(); m.set(model.Status{Phase: "failed", Message: e.Error()}); return e }
+	probe, cancelProbe := context.WithTimeout(ctx, 45*time.Second)
+	defer cancelProbe()
+	var response string
+	if e := chromedp.Run(probe, chromedp.Navigate(proxy.DetectionURL), chromedp.Text("body", &response, chromedp.ByQuery)); e != nil {
+		return fail(errors.New("实际浏览器出口检测失败，已关闭浏览器"))
+	}
+	var result struct {
+		IP string `json:"ip"`
+	}
+	if e := json.Unmarshal([]byte(response), &result); e != nil || net.ParseIP(result.IP) == nil || net.ParseIP(result.IP).String() != expected.IP {
+		return fail(errors.New("浏览器出口与全局检测不同，已阻止使用"))
+	}
+	observed := map[string]any{}
+	expr := `({userAgent:navigator.userAgent,platform:navigator.platform,language:navigator.language,languages:navigator.languages,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,cores:navigator.hardwareConcurrency,memory:navigator.deviceMemory,screen:screen.width+' × '+screen.height,pixelRatio:devicePixelRatio,webgl:(()=>{try{let c=document.createElement('canvas').getContext('webgl');let e=c.getExtension('WEBGL_debug_renderer_info');return e?c.getParameter(e.UNMASKED_RENDERER_WEBGL):'不可用'}catch{return '不可用'}})()})`
+	if e := chromedp.Run(probe, chromedp.Evaluate(expr, &observed)); e != nil {
+		return fail(errors.New("浏览器参数观测失败"))
+	}
+	var tokenBytes [24]byte
+	rand.Read(tokenBytes[:])
+	token := hex.EncodeToString(tokenBytes[:])
+	listener, e := net.Listen("tcp", "127.0.0.1:0")
+	if e != nil {
+		return fail(e)
+	}
+	url := "http://" + listener.Addr().String() + "/" + token
+	data := struct{ IP, Language, Timezone, ID, Version string }{expected.IP, p.Language, p.Timezone, p.ID, KernelVersion}
+	tpl := template.Must(template.New("start").Parse(startHTML))
+	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/"+token {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		tpl.Execute(w, data)
+	})}
+	m.mu.Lock()
+	m.server = server
+	m.observed = observed
+	m.homepage = url
+	m.mu.Unlock()
+	go server.Serve(listener)
+	if e = chromedp.Run(probe, chromedp.Navigate(url), chromedp.ActionFunc(func(ctx context.Context) error { _, e := target.CreateTarget("https://claude.ai/").Do(ctx); return e })); e != nil {
+		return fail(errors.New("默认标签页打开失败"))
+	}
+	o := *expected
+	o.At = time.Now().UTC()
+	m.set(model.Status{Phase: "running", Message: "浏览器出口已核验", Observation: &o})
+	go func() { <-ctx.Done(); m.set(model.Status{Phase: "idle", Message: "浏览器已关闭"}) }()
+	return nil
+}
+func (m *Manager) Stop() {
+	m.mu.Lock()
+	cancel, alloc, server := m.cancel, m.allocatorCancel, m.server
+	m.cancel = nil
+	m.allocatorCancel = nil
+	m.server = nil
+	m.observed = nil
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if alloc != nil {
+		alloc()
+	}
+	if server != nil {
+		server.Close()
+	}
+	m.set(model.Status{Phase: "idle", Message: "浏览器已关闭"})
+}
+
+const startHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>claudeFF 环境信息</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#fafaf9;color:#292927;font:16px -apple-system,Segoe UI,Microsoft YaHei,sans-serif;margin:0}main{max-width:850px;margin:10vh auto;padding:35px}h1{font-size:34px;font-weight:500}p{color:#686965;line-height:1.8}.grid{display:grid;grid-template-columns:repeat(3,1fr);background:white;border:1px solid #e4e4df;border-radius:16px;margin:35px 0}.grid div{padding:24px}small{display:block;color:#686965;margin-bottom:12px}b{font-weight:500}a{display:inline-block;background:#292927;color:white;padding:14px 22px;border-radius:8px;text-decoration:none}footer{margin-top:25px;color:#686965;font-size:12px}@media(max-width:600px){.grid{grid-template-columns:1fr 1fr}}</style><main><p>CLAUDEFF · 环境信息</p><h1>你的环境，一目了然。</h1><p>此页由当前指纹浏览器打开，出口已通过实际浏览器路径核验。</p><section class="grid"><div><small>出口 IP</small><b>{{.IP}}</b></div><div><small>语言</small><b>{{.Language}}</b></div><div><small>时区</small><b>{{.Timezone}}</b></div><div><small>环境标识</small><b>{{.ID}}</b></div><div><small>内核</small><b>{{.Version}}</b></div><div><small>住宅属性</small><b>未验证</b></div></section><a href="https://claude.ai/">打开 Claude.ai →</a><footer>历史启动检测结果 · 详细指纹与重新检测请在管理程序查看。第三方工具，非官方客户端。</footer></main></html>`
