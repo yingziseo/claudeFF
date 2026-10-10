@@ -1,6 +1,6 @@
 export type Phase = 'idle' | 'busy' | 'ready' | 'running' | 'failed'
 export type Observation = { ip: string; country: string; countryCode?: string; timezone: string; latency: number; at: string; revision: number }
-export type Status = { phase: Phase; message: string; observation?: Observation }
+export type Status = { version?: string; phase: Phase; message: string; observation?: Observation }
 export type ProxyConfig = { protocol: string; host: string; port: number; username: string; password?: string }
 export type Profile = { id: string; revision: number; source: string; seed: string; language: string; timezone: string; createdAt: string }
 export type Snapshot = { proxy: ProxyConfig; hasPassword: boolean; revision: number; profile?: Profile; browser: Status; code: Status; network: Status; kernel: boolean; native: boolean; dataDir: string; previous?: Observation; authRequired?: boolean; authorized?: boolean; fingerprint?: Record<string, unknown> }

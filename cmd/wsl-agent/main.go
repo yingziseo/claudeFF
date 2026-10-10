@@ -161,6 +161,17 @@ func run() error {
 		if e = execute("runuser", "-u", "claudeff", "--", "/bin/bash", "/opt/claudeff/launch.sh", "/bin/bash", "-c", installer); e != nil {
 			return e
 		}
+		versionCmd := exec.CommandContext(ctx, "runuser", "-u", "claudeff", "--", "/bin/bash", "/opt/claudeff/launch.sh", "/home/claudeff/.local/bin/claude", "--version")
+		versionCmd.Env = env
+		versionOutput, versionErr := versionCmd.Output()
+		if versionErr != nil {
+			return errors.New("官方 Code 版本验证失败")
+		}
+		version := strings.TrimSpace(string(versionOutput))
+		if len(version) > 120 {
+			return errors.New("官方版本输出异常")
+		}
+		emit("version", version)
 		emit("ready", "Claude Code 已安装；需重启专用发行版使宿主访问限制生效")
 		return nil
 	}

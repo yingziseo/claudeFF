@@ -230,6 +230,10 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 					m.set("ready", text)
 				}
 				signal(nil)
+			case "version":
+				m.mu.Lock()
+				m.status.Version = text
+				m.mu.Unlock()
 			case "terminal":
 				if m.emit != nil {
 					m.emit("terminal:data", text)
@@ -320,7 +324,7 @@ func (m *Manager) Installed() bool {
 	return e == nil
 }
 func (m *Manager) MarkInstalled() error {
-	return os.WriteFile(filepath.Join(m.root, "code-installed"), []byte("official-install-complete"), 0600)
+	return os.WriteFile(filepath.Join(m.root, "code-installed"), []byte(m.State().Version), 0600)
 }
 func (m *Manager) ChooseProject(ctx context.Context, path string) error {
 	info, e := os.Stat(path)
@@ -411,5 +415,12 @@ func (m *Manager) ChooseProject(ctx context.Context, path string) error {
 	return nil
 }
 
-func (m *Manager) RestoreReady() { m.set("ready", "隔离安装已保存；启动前重新核验") }
-func (m *Manager) Fail(e error)  { m.set("failed", e.Error()) }
+func (m *Manager) RestoreReady() {
+	m.set("ready", "隔离安装已保存；启动前重新核验")
+	if version, e := os.ReadFile(filepath.Join(m.root, "code-installed")); e == nil && len(version) < 120 {
+		m.mu.Lock()
+		m.status.Version = string(version)
+		m.mu.Unlock()
+	}
+}
+func (m *Manager) Fail(e error) { m.set("failed", e.Error()) }

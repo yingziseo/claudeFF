@@ -77,6 +77,7 @@ type Observation struct {
 	Revision    int       `json:"revision"`
 }
 type Status struct {
+	Version     string       `json:"version,omitempty"`
 	Phase       string       `json:"phase"`
 	Message     string       `json:"message"`
 	Observation *Observation `json:"observation,omitempty"`
