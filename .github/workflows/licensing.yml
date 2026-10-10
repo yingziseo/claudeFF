@@ -2,7 +2,7 @@ name: License service and panel
 on:
   push:
     branches: [main]
-    paths: ['internal/licensing/**', 'cmd/license-server/**', 'frontend/**', 'go.*', '.github/workflows/licensing.yml']
+    paths: ['internal/licensing/**', 'cmd/license-server/**', 'frontend/**', 'go.*', 'docs/授权服务运行说明.md', '.github/workflows/licensing.yml']
   workflow_dispatch:
 permissions:
   contents: read

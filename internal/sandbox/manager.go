@@ -179,7 +179,7 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 	m.cmd = cmd
 	m.input = in
 	m.cancel = cancel
-	m.status = model.Status{Phase: "busy", Message: "正在核验隔离环境"}
+	m.status = model.Status{Phase: "busy", Message: "正在核验隔离环境", Version: m.status.Version}
 	m.mu.Unlock()
 	if _, e = in.Write(append(encoded, '\n')); e != nil {
 		m.Stop()
@@ -215,11 +215,13 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 					m.status.Observation = &o
 					m.mu.Unlock()
 				} else {
+					m.set("failed", "Code 出口不同，已阻止启动")
 					signal(errors.New("Code 与浏览器配置的出口不同，已阻止启动"))
 					cancel()
 				}
 			case "ready":
 				if !verified {
+					m.set("failed", "缺少隔离出口验证")
 					signal(errors.New("缺少隔离出口验证"))
 					cancel()
 					continue
@@ -248,6 +250,7 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 			}
 		}
 		e := cmd.Wait()
+		cancelled := ctx.Err() != nil
 		m.mu.Lock()
 		m.cmd = nil
 		m.input = nil
@@ -256,7 +259,9 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 		cancel()
 		finished <- e
 		if e != nil {
-			if m.State().Phase != "failed" {
+			if cancelled && m.State().Phase != "failed" {
+				m.stoppedState()
+			} else if m.State().Phase != "failed" {
 				m.set("failed", "隔离进程结束，启动已阻止")
 			}
 			signal(errors.New("隔离进程未正常完成"))
@@ -300,7 +305,14 @@ func (m *Manager) Stop() {
 	if cancel != nil {
 		cancel()
 	}
-	m.set("idle", "隔离操作已停止")
+	m.stoppedState()
+}
+func (m *Manager) stoppedState() {
+	if m.Installed() {
+		m.set("ready", "终端已停止，可重新启动")
+	} else {
+		m.set("idle", "隔离操作已停止")
+	}
 }
 func (m *Manager) Write(data string) error {
 	m.mu.Lock()

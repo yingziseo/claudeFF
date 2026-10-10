@@ -94,3 +94,27 @@ test('桌面数据读取失败给出恢复入口，避免永久转圈', async ({
  await page.goto('./'); await expect(page.getByRole('heading', { name: '工作空间暂时无法打开' })).toBeVisible()
  await expect(page.getByRole('alert')).toContainText('本地数据目录不可写'); await expect(page.getByRole('button', { name: '重试读取' })).toBeVisible()
 })
+
+for (const failDownload of [false, true]) {
+ test(`桌面首次打开自动准备内核${failDownload ? '，失败后禁止启动' : '并启动浏览器'}`, async ({ page }) => {
+  await page.addInitScript((fail) => {
+   const calls: string[] = []
+   Object.defineProperty(window, 'testCalls', { value: calls })
+   const state = { proxy: { protocol: 'http', host: 'fixture.example.com', port: 8080, username: '' }, hasPassword: false, revision: 1, browser: { phase: 'idle', message: '尚未启动' }, code: { phase: 'idle', message: '尚未安装' }, network: { phase: 'ready', message: '测试连接', observation: { ip: '203.0.113.12', at: new Date().toISOString(), revision: 1 } }, kernel: false, native: true, dataDir: '测试目录' }
+   window.go = { main: { App: { Invoke: async (action: string) => {
+    if (action !== 'snapshot') calls.push(action)
+    if (action === 'kernel.install') { if (fail) throw new Error('测试：内核完整性校验失败'); state.kernel = true }
+    if (action === 'browser.start') state.browser = { phase: 'running', message: '测试：实际调用接口' }
+    return JSON.stringify(state)
+   } } } }
+  }, failDownload)
+  await page.goto('./')
+  await page.getByRole('button', { name: '打开 Claude.ai', exact: true }).click()
+  if (failDownload) {
+   await expect(page.getByText('测试：内核完整性校验失败', { exact: true })).toBeVisible()
+  } else {
+   await expect(page.getByRole('button', { name: '激活浏览器', exact: true })).toBeVisible()
+  }
+  expect(await page.evaluate(() => (window as unknown as { testCalls: string[] }).testCalls)).toEqual(failDownload ? ['kernel.install'] : ['kernel.install', 'browser.start'])
+ })
+}
