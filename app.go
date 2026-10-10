@@ -46,6 +46,13 @@ type App struct {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if marker := os.Getenv("CLAUDEFF_UI_MARKER"); marker != "" && os.Getenv("GITHUB_ACTIONS") == "true" {
+		runtime.EventsOn(ctx, "ui:ready", func(data ...interface{}) {
+			if len(data) > 0 && data[0] == "你的 Claude 工作空间" {
+				_ = os.WriteFile(marker, []byte("native-react-ready"), 0600)
+			}
+		})
+	}
 	base, e := os.UserConfigDir()
 	if e != nil {
 		a.initErr = e
@@ -119,7 +126,8 @@ func (a *App) snapshot() (string, error) {
 	}
 	p, revision, e := a.db.Proxy()
 	secretUnavailable := errors.Is(e, store.ErrSecretUnavailable)
-	if e != nil && !secretUnavailable {
+	proxyFormatInvalid := errors.Is(e, store.ErrProxyFormat)
+	if e != nil && !secretUnavailable && !proxyFormatInvalid {
 		return "", e
 	}
 	profile, e := a.db.Profile()
@@ -132,6 +140,9 @@ func (a *App) snapshot() (string, error) {
 	a.mu.Unlock()
 	if secretUnavailable {
 		network = model.Status{Phase: "failed", Message: store.ErrSecretUnavailable.Error()}
+	}
+	if proxyFormatInvalid {
+		network = model.Status{Phase: "failed", Message: store.ErrProxyFormat.Error()}
 	}
 	cs := a.code.State()
 	if network.Observation != nil && time.Since(network.Observation.At) > 5*time.Minute {

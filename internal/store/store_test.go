@@ -92,3 +92,31 @@ func TestLegacyProviderHostnameIsRepairedWithoutLeakingSecret(t *testing.T) {
 		t.Fatal("migration repeated")
 	}
 }
+
+func TestMalformedLegacyProxyCanBeReplacedWithoutLosingProfile(t *testing.T) {
+	s, e := Open(t.TempDir(), fakeVault{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	profile, e := s.EnsureProfile("browser")
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = s.db.Exec(`INSERT INTO settings(id,proxy,revision) VALUES(1,?,1)`, []byte(`{"protocol":"http","host":"host:7085:broken-secret","port":8080}`))
+	if e != nil {
+		t.Fatal(e)
+	}
+	p, _, e := s.Proxy()
+	if e != ErrProxyFormat || p.Host != "" || p.Protocol != "http" {
+		t.Fatal("malformed legacy row exposed or did not remain recoverable")
+	}
+	_, e = s.SaveProxy(model.Proxy{Protocol: "http", Host: "proxy.example.com", Port: 8080})
+	if e != nil {
+		t.Fatal(e)
+	}
+	retained, e := s.Profile()
+	if e != nil || retained.ID != profile.ID {
+		t.Fatal("existing browser profile lost")
+	}
+}

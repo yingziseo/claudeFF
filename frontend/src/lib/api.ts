@@ -5,7 +5,7 @@ export type ProxyConfig = { protocol: string; host: string; port: number; userna
 export type Profile = { id: string; revision: number; source: string; seed: string; language: string; timezone: string; createdAt: string }
 export type Snapshot = { browserSupported?: boolean; platform?: string; project?: string; proxy: ProxyConfig; hasPassword: boolean; revision: number; profile?: Profile; browser: Status; code: Status; network: Status; kernel: boolean; native: boolean; dataDir: string; previous?: Observation; authRequired?: boolean; authorized?: boolean; fingerprint?: Record<string, unknown> }
 type Native = { Invoke: (action: string, payload: string) => Promise<string> }
-declare global { interface Window { go?: { main?: { App?: Native } }; runtime?: { EventsOn: (name: string, cb: (data: string) => void) => () => void } } }
+declare global { interface Window { go?: { main?: { App?: Native } }; runtime?: { EventsEmit?: (name: string, ...data: unknown[]) => void; EventsOn: (name: string, cb: (data: string) => void) => () => void } } }
 export const isNative = () => Boolean(window.go?.main?.App)
 const idle = (): Status => ({ phase: 'idle', message: '尚未启动' })
 let demo: Snapshot = { proxy: { protocol: 'http', host: '', port: 8080, username: '' }, hasPassword: false, revision: 0, browser: idle(), code: idle(), network: { phase: 'idle', message: '先添加你的代理' }, kernel: true, native: false, dataDir: '预览不访问电脑文件' }

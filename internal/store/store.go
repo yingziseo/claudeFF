@@ -14,6 +14,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+var ErrProxyFormat = errors.New("旧代理信息无法识别，请重新粘贴识别；浏览器数据已保留")
+
 var ErrSecretUnavailable = errors.New("无法读取代理密码，请允许系统秘密存储访问或重新填写密码")
 
 type Protector interface {
@@ -78,7 +80,7 @@ func (s *Store) Proxy() (model.Proxy, int, error) {
 	if strings.Contains(p.Host, ":") && net.ParseIP(p.Host) == nil {
 		normalized, err := model.ParseProxyText(p.Host, p.Protocol)
 		if err != nil {
-			return model.Proxy{}, rev, errors.New("旧代理格式无效，请重新粘贴识别；浏览器数据已保留")
+			return model.Proxy{Protocol: "http", Port: 8080}, rev, ErrProxyFormat
 		}
 		if normalized.Username == "" {
 			normalized.Username = p.Username

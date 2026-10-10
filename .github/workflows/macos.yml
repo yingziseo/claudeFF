@@ -23,6 +23,8 @@ jobs:
             name: apple-silicon
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
+    env:
+      CLAUDEFF_DESKTOP: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
@@ -66,10 +68,14 @@ jobs:
         run: go test -v ./internal/browser -run TestFingerprintKernel -timeout 10m
       - name: macOS GUI process smoke
         run: |
+          export CLAUDEFF_UI_MARKER="$RUNNER_TEMP/claudeff-ui-ready"
           build/bin/claudeFF.app/Contents/MacOS/claudeFF &
           app_pid=$!
           sleep 8
           kill -0 "$app_pid"
+          test -f "$CLAUDEFF_UI_MARKER"
+          cat "$CLAUDEFF_UI_MARKER"
+          screencapture -x macos-start.png || true
           kill "$app_pid"
       - name: Package macOS app preserving links and executable permissions
         run: |
@@ -88,5 +94,6 @@ jobs:
           path: |
             claudeFF-macos-${{ matrix.name }}.zip
             claudeFF-macos-${{ matrix.name }}.sha256
+            macos-start.png
             go.mod
             go.sum

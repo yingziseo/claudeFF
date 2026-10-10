@@ -22,6 +22,7 @@ export default function App() {
  const notify=(v:string)=>{if(timer.current)clearTimeout(timer.current);setToast(v);timer.current=setTimeout(()=>setToast(''),5000)}
  const refresh=async()=>{const s=await invoke('snapshot');setSnapshot(s);return s}
  useEffect(()=>{void refresh().then(s=>{setProxy({...s.proxy,port:s.proxy.port||8080});setKeepPassword(s.hasPassword)}).catch((e:Error)=>setLoadError(e.message));const id=isNative()?setInterval(()=>{void refresh().catch(()=>{})},2000):null;return()=>{if(id)clearInterval(id);if(timer.current)clearTimeout(timer.current)}},[])
+ useEffect(()=>{if(snapshot?.native)window.runtime?.EventsEmit?.('ui:ready',document.querySelector('h1')?.textContent)},[snapshot?.native])
  useEffect(()=>{document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;try{localStorage.setItem('claudeff.theme',theme)}catch{/* optional */}},[theme])
  useEffect(()=>{if(snapshot?.profile){setLanguage(snapshot.profile.language);setTimezone(snapshot.profile.timezone)}},[snapshot?.profile?.id,snapshot?.profile?.revision])
  const run=async(action:string,payload:unknown={})=>{if(busy)return false;setBusy(action);setError('');try{const s=await invoke(action,payload);setSnapshot(s);if(action.startsWith('proxy.save')){setProxy({...s.proxy,port:s.proxy.port||8080});setPassword('');setKeepPassword(s.hasPassword)}if(action==='cache.clear')notify('缓存已清理');return true}catch(e){setError((e as Error).message);void refresh().catch(()=>{});return false}finally{setBusy('')}}
