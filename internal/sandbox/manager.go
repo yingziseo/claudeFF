@@ -112,7 +112,10 @@ func (m *Manager) Prepare(ctx context.Context, client *http.Client) error {
 			return errors.New("写入隔离资源失败")
 		}
 	}
-	return wsl(ctx, "-d", Distro, "-u", "root", "--exec", "chmod", "700", "/opt/claudeff/wsl-agent", "/opt/claudeff/provision.sh", "/opt/claudeff/firewall.sh", "/opt/claudeff/launch.sh").Run()
+	if e = wsl(ctx, "-d", Distro, "-u", "root", "--exec", "chmod", "700", "/opt/claudeff/wsl-agent", "/opt/claudeff/provision.sh", "/opt/claudeff/firewall.sh").Run(); e != nil {
+		return e
+	}
+	return wsl(ctx, "-d", Distro, "-u", "root", "--exec", "chmod", "755", "/opt/claudeff/launch.sh").Run()
 }
 func download(ctx context.Context, c *http.Client, url, digest, path string) error {
 	q, e := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -183,6 +186,7 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 		return e
 	}
 	ready := make(chan error, 1)
+	finished := make(chan error, 1)
 	signal := func(e error) {
 		select {
 		case ready <- e:
@@ -244,6 +248,7 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 		m.cancel = nil
 		m.mu.Unlock()
 		cancel()
+		finished <- e
 		if e != nil {
 			if m.State().Phase != "failed" {
 				m.set("failed", "隔离进程结束，启动已阻止")
@@ -255,7 +260,21 @@ func (m *Manager) Launch(parent context.Context, mode string, p model.Proxy, pro
 	}()
 	select {
 	case e = <-ready:
-		return e
+		if e != nil {
+			return e
+		}
+		if mode != "run" {
+			select {
+			case endErr := <-finished:
+				if endErr != nil {
+					return errors.New("隔离安装未完整结束")
+				}
+			case <-parent.Done():
+				m.Stop()
+				return parent.Err()
+			}
+		}
+		return nil
 	case <-parent.Done():
 		m.Stop()
 		return parent.Err()

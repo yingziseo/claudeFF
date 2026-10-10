@@ -66,6 +66,9 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 }
 func (a *App) beforeClose(ctx context.Context) bool {
+	if a.code == nil {
+		return false
+	}
 	bs, _ := a.browser.State()
 	cs := a.code.State()
 	locked := a.operation.TryLock()
