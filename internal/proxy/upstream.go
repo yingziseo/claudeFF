@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+type ConnectionError struct{ Message string }
+
+func (e *ConnectionError) Error() string   { return e.Message }
+func connectionError(message string) error { return &ConnectionError{Message: message} }
+
 func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 	if e := p.Validate(); e != nil {
 		return nil, e
@@ -32,7 +37,7 @@ func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 		}
 		c, e := s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
 		if e != nil {
-			return nil, errors.New("SOCKS5 代理连接失败")
+			return nil, connectionError("SOCKS5 连接或认证失败，请确认用户名、密码、端口及网络可达")
 		}
 		return c, nil
 	}
@@ -44,26 +49,35 @@ func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 		c, e = d.DialContext(ctx, "tcp", p.Address())
 	}
 	if e != nil {
-		return nil, errors.New("代理网关不可达")
+		return nil, connectionError("代理网关连接失败，请确认协议、端口及海外网络连接；HTTPS 选项仅用于网关本身提供 TLS 的代理")
 	}
-	c.SetDeadline(time.Now().Add(20 * time.Second))
+	deadline := time.Now().Add(12 * time.Second)
+	if end, ok := ctx.Deadline(); ok && end.Before(deadline) {
+		deadline = end
+	}
+	c.SetDeadline(deadline)
+	stop := context.AfterFunc(ctx, func() { c.Close() })
+	defer stop()
 	req := &http.Request{Method: "CONNECT", URL: &url.URL{Opaque: target}, Host: target, Header: make(http.Header)}
 	if p.Username != "" {
 		req.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(p.Username+":"+p.Password)))
 	}
 	if e = req.Write(c); e != nil {
 		c.Close()
-		return nil, errors.New("代理握手失败")
+		return nil, connectionError("代理握手发送失败，连接已中断")
 	}
 	r := bufio.NewReader(c)
 	resp, e := http.ReadResponse(r, req)
 	if e != nil {
 		c.Close()
-		return nil, errors.New("代理响应无效")
+		return nil, connectionError("代理未返回有效 HTTP 握手，请确认是否应选择 SOCKS5 协议")
 	}
 	if resp.StatusCode != 200 {
 		c.Close()
-		return nil, fmt.Errorf("代理连接被拒绝（HTTP %d），请检查认证和网关权限", resp.StatusCode)
+		if resp.StatusCode == 407 {
+			return nil, connectionError("代理认证失败（HTTP 407），请检查用户名和密码")
+		}
+		return nil, connectionError(fmt.Sprintf("代理网关拒绝连接（HTTP %d），请检查代理权限和目标限制", resp.StatusCode))
 	}
 	c.SetDeadline(time.Time{})
 	return &bufferedConn{Conn: c, reader: r}, nil

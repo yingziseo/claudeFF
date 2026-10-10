@@ -5,8 +5,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/yingziseo/claudeFF/internal/code"
 	"github.com/yingziseo/claudeFF/internal/licensing"
-	"github.com/yingziseo/claudeFF/internal/sandbox"
 	"github.com/yingziseo/claudeFF/internal/secret"
 	"github.com/yingziseo/claudeFF/internal/store"
 	"net/http"
@@ -37,7 +37,7 @@ func TestProductionBindingsEnforceActivationAndRevocation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	app := &App{ctx: context.Background(), root: root, db: db, code: sandbox.New(root, root, nil), license: client}
+	app := &App{ctx: context.Background(), root: root, db: db, code: code.New(root, nil), license: client}
 	if _, e = app.Invoke("browser.start", "{}"); e == nil {
 		t.Fatal("production feature bypass")
 	}

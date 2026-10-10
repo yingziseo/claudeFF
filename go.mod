@@ -3,6 +3,7 @@ module github.com/yingziseo/claudeFF
 go 1.26.0
 
 require (
+	github.com/UserExistsError/conpty v0.0.0-20240709184000-aff362cbe133
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
 	github.com/chromedp/chromedp v0.14.2
 	github.com/creack/pty v1.1.24

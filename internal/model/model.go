@@ -29,6 +29,9 @@ func (p Proxy) Validate() error {
 	if p.Host == "" || strings.TrimSpace(p.Host) != p.Host || strings.ContainsAny(p.Host, "/\\@?#\r\n\t ") {
 		return errors.New("请填写代理主机，不要包含协议、路径或认证信息")
 	}
+	if strings.Contains(p.Host, ":") && net.ParseIP(p.Host) == nil {
+		return errors.New("代理地址中包含端口或认证信息，请使用一键粘贴识别")
+	}
 	if strings.ContainsAny(p.Username+p.Password, "\r\n") || strings.Contains(p.Username, ":") {
 		return errors.New("代理认证格式无效")
 	}
@@ -68,6 +71,10 @@ func (p Profile) Validate() error {
 }
 
 type Observation struct {
+	City        string    `json:"city,omitempty"`
+	Region      string    `json:"region,omitempty"`
+	ISP         string    `json:"isp,omitempty"`
+	Endpoint    string    `json:"endpoint,omitempty"`
 	CountryCode string    `json:"countryCode"`
 	IP          string    `json:"ip"`
 	Country     string    `json:"country"`
@@ -83,6 +90,8 @@ type Status struct {
 	Observation *Observation `json:"observation,omitempty"`
 }
 type Snapshot struct {
+	Platform     string       `json:"platform"`
+	Project      string       `json:"project"`
 	Previous     *Observation `json:"previous,omitempty"`
 	AuthRequired bool         `json:"authRequired"`
 	Authorized   bool         `json:"authorized"`

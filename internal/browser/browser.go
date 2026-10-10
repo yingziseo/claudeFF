@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"github.com/chromedp/cdproto/page"
-	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/yingziseo/claudeFF/internal/model"
 	"github.com/yingziseo/claudeFF/internal/proxy"
@@ -16,12 +14,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 )
 
 type Manager struct {
 	mu              sync.Mutex
+	sessionMu       sync.Mutex
 	cancel          context.CancelFunc
 	ctx             context.Context
 	allocatorCancel context.CancelFunc
@@ -29,6 +29,7 @@ type Manager struct {
 	status          model.Status
 	observed        map[string]any
 	homepage        string
+	root            string
 }
 
 func (m *Manager) State() (model.Status, map[string]any) {
@@ -55,7 +56,7 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 	}
 	if exe == "" {
 		m.mu.Unlock()
-		return errors.New("请先下载浏览器内核")
+		return errors.New("发布包缺少内置指纹内核，请重新解压完整 ZIP")
 	}
 	if expected == nil {
 		m.mu.Unlock()
@@ -67,28 +68,33 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 	if e := os.MkdirAll(dataDir, 0700); e != nil {
 		return e
 	}
-	opts := []chromedp.ExecAllocatorOption{chromedp.ExecPath(exe), chromedp.UserDataDir(dataDir), chromedp.NoFirstRun, chromedp.NoDefaultBrowserCheck, chromedp.Flag("headless", false), chromedp.Flag("proxy-server", relayURL), chromedp.Flag("proxy-bypass-list", "127.0.0.1"), chromedp.Flag("fingerprint", p.Seed), chromedp.Flag("fingerprint-platform", "windows"), chromedp.Flag("lang", p.Language), chromedp.Flag("timezone", p.Timezone), chromedp.Flag("disable-non-proxied-udp", true), chromedp.Flag("disable-quic", true), chromedp.Flag("force-webrtc-ip-handling-policy", "disable_non_proxied_udp"), chromedp.Flag("disable-background-networking", true)}
+	platform := "windows"
+	if runtime.GOOS == "darwin" {
+		platform = "macos"
+	}
+	opts := []chromedp.ExecAllocatorOption{chromedp.ExecPath(exe), chromedp.UserDataDir(dataDir), chromedp.NoFirstRun, chromedp.NoDefaultBrowserCheck, chromedp.Flag("restore-last-session", true), chromedp.Flag("headless", false), chromedp.Flag("proxy-server", relayURL), chromedp.Flag("proxy-bypass-list", "127.0.0.1"), chromedp.Flag("fingerprint", p.Seed), chromedp.Flag("fingerprint-platform", platform), chromedp.Flag("lang", p.Language), chromedp.Flag("timezone", p.Timezone), chromedp.Flag("disable-non-proxied-udp", true), chromedp.Flag("disable-quic", true), chromedp.Flag("force-webrtc-ip-handling-policy", "disable_non_proxied_udp"), chromedp.Flag("disable-background-networking", true)}
 	alloc, allocCancel := chromedp.NewExecAllocator(parent, opts...)
 	ctx, cancel := chromedp.NewContext(alloc)
 	m.mu.Lock()
 	m.ctx = ctx
 	m.cancel = cancel
 	m.allocatorCancel = allocCancel
+	m.root = root
 	m.mu.Unlock()
 	fail := func(e error) error { m.Stop(); m.set(model.Status{Phase: "failed", Message: e.Error()}); return e }
 	if e := chromedp.Run(ctx); e != nil {
 		return fail(errors.New("内核进程启动失败"))
 	}
-	probe, cancelProbe := context.WithTimeout(ctx, 45*time.Second)
+	// A separate probe tab must never overwrite a restored conversation.
+	probeTab, closeProbe := chromedp.NewContext(ctx)
+	probe, cancelProbe := context.WithTimeout(probeTab, 40*time.Second)
 	defer cancelProbe()
-	var response string
-	if e := chromedp.Run(probe, chromedp.Navigate(proxy.DetectionURL), chromedp.Text("body", &response, chromedp.ByQuery)); e != nil {
+	defer closeProbe()
+	ip, endpoint, latency, e := browserExit(probe)
+	if e != nil {
 		return fail(errors.New("实际浏览器出口检测失败，已关闭浏览器"))
 	}
-	var result struct {
-		IP string `json:"ip"`
-	}
-	if e := json.Unmarshal([]byte(response), &result); e != nil || net.ParseIP(result.IP) == nil || net.ParseIP(result.IP).String() != expected.IP {
+	if ip != expected.IP {
 		return fail(errors.New("浏览器出口与全局检测不同，已阻止使用"))
 	}
 	observed := map[string]any{}
@@ -137,11 +143,13 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 	m.homepage = url
 	m.mu.Unlock()
 	go server.Serve(listener)
-	if e = chromedp.Run(probe, chromedp.Navigate(url), chromedp.ActionFunc(func(ctx context.Context) error { _, e := target.CreateTarget("https://claude.ai/").Do(ctx); return e })); e != nil {
-		return fail(errors.New("默认标签页打开失败"))
+	closeProbe()
+	if e = m.restoreTabs(ctx, url); e != nil {
+		return fail(errors.New("浏览器标签页恢复失败；已有浏览器数据已保留"))
 	}
 	o := *expected
 	o.At = time.Now().UTC()
+	o.Endpoint, o.Latency = endpoint, latency
 	m.set(model.Status{Phase: "running", Message: "浏览器出口已核验", Observation: &o})
 	go func() {
 		<-ctx.Done()
@@ -159,9 +167,11 @@ func (m *Manager) Start(parent context.Context, exe, root, relayURL string, p mo
 		m.mu.Unlock()
 	}()
 	go m.monitor(ctx, expected.IP)
+	go m.trackSession(ctx)
 	return nil
 }
 func (m *Manager) Stop() {
+	m.saveSession()
 	m.mu.Lock()
 	cancel, alloc, server, ctx := m.cancel, m.allocatorCancel, m.server, m.ctx
 	m.cancel = nil
@@ -194,21 +204,15 @@ func (m *Manager) verify(ctx context.Context, ip string) error {
 	defer cancel()
 	limited, limit := context.WithTimeout(probe, 25*time.Second)
 	defer limit()
-	var text string
-	e := chromedp.Run(limited, chromedp.Navigate(proxy.DetectionURL), chromedp.Text("body", &text, chromedp.ByQuery))
-	var got struct {
-		IP string `json:"ip"`
-	}
-	if e == nil {
-		e = json.Unmarshal([]byte(text), &got)
-	}
-	if e != nil || got.IP != ip {
+	got, endpoint, latency, e := browserExit(limited)
+	if e != nil || got != ip {
 		return errors.New("运行期间出口检测失败或变化，已关闭浏览器")
 	}
 	m.mu.Lock()
 	if m.status.Observation != nil {
 		o := *m.status.Observation
 		o.At = time.Now().UTC()
+		o.Endpoint, o.Latency = endpoint, latency
 		m.status.Observation = &o
 	}
 	m.mu.Unlock()

@@ -11,7 +11,7 @@ export function TerminalPane({ running }: { running: boolean }) {
   const term = new Terminal({ fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, cursorBlink: active.current, theme: { background: '#141517', foreground: '#e9e7e2', cursor: '#d97757' }, scrollback: 3000 }); instance.current = term
   const fit = new FitAddon(); term.loadAddon(fit); term.open(element.current); fit.fit()
   term.writeln(isNative() ? '\x1b[90m终端已准备。启动后显示真实 Claude Code 输出。\x1b[0m' : '\x1b[90m界面预览 · 不是实际 Claude Code 会话\x1b[0m')
-  if (!isNative()) { term.writeln(''); term.writeln('  Claude Code'); term.writeln('  WSL2 · 共享全局连接 · 独立项目空间'); term.writeln(''); term.write('\x1b[90m准备环境后，点击「启动终端」。\x1b[0m') }
+  if (!isNative()) { term.writeln(''); term.writeln('  Claude Code'); term.writeln('  官方原生版 · 共用全局代理'); term.writeln(''); term.write('\x1b[90m安装后，点击「启动终端」。\x1b[0m') }
   term.attachCustomKeyEventHandler((event) => { if(event.type !== 'keydown') return true
    if(event.ctrlKey && event.shiftKey && event.code === 'KeyC') { void navigator.clipboard?.writeText(term.getSelection()); return false }
    if(event.ctrlKey && event.shiftKey && event.code === 'KeyV') { void navigator.clipboard?.readText().then((text) => { if (isNative() && active.current) void terminal('terminal.write', { data: text }) }); return false }

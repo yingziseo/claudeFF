@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -44,6 +45,28 @@ func TestAuthenticatedConnect(t *testing.T) {
 	}
 	if <-done != "Basic dXNlcjpwYXNz" {
 		t.Fatal("authentication missing")
+	}
+}
+
+func TestProxyFailureReasonSurvivesDetection(t *testing.T) {
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(407) }))
+	defer gateway.Close()
+	addr := gateway.Listener.Addr().(*net.TCPAddr)
+	_, err := Detect(context.Background(), model.Proxy{Protocol: "http", Host: "127.0.0.1", Port: addr.Port, Username: "fixture", Password: "must-not-appear"}, 1)
+	if err == nil || !strings.Contains(err.Error(), "407") || strings.Contains(err.Error(), "must-not-appear") {
+		t.Fatal("authentication diagnosis lost or credentials leaked")
+	}
+}
+func TestDetectionStationFailureUsesBackup(t *testing.T) {
+	failed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+	defer failed.Close()
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ip":"203.0.113.8","country":"SG","city":"Singapore","timezone":"Asia/Singapore"}`))
+	}))
+	defer backup.Close()
+	o, err := DetectAcross(context.Background(), http.DefaultClient, []string{failed.URL, backup.URL}, 9)
+	if err != nil || o.IP != "203.0.113.8" || o.CountryCode != "SG" || o.Timezone != "Asia/Singapore" || o.Endpoint != backup.URL {
+		t.Fatal("backup did not return verified exit information", err)
 	}
 }
 func TestRelayFailClosedAndBlockedTargets(t *testing.T) {

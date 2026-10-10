@@ -1,120 +1,81 @@
 import { expect, test, type Page } from '@playwright/test'
 async function connect(page: Page) {
- await page.getByRole('button', { name: '全局连接', exact: true }).click()
- await page.getByLabel('代理地址', { exact: true }).fill('proxy.example.com')
- await page.getByRole('button', { name: '保存全局代理' }).click()
- await page.getByRole('button', { name: '检测连接' }).click()
- await expect(page.getByRole('heading', { name: '连接已准备' })).toBeVisible()
+ await page.getByRole('button',{name:'全局连接',exact:true}).click()
+ await page.getByLabel('代理地址',{exact:true}).fill('proxy.example.com')
+ await page.getByRole('button',{name:'保存并检测',exact:true}).click()
+ await expect(page.getByRole('heading',{name:'连接已准备'})).toBeVisible()
 }
-test('三产品入口与官方素材，取消多环境结构', async ({ page }, info) => {
- await page.goto('./'); await expect(page.getByRole('heading', { name: '一个环境，从容开始。' })).toBeVisible()
- await expect(page.getByText('正在开发中', { exact: true })).toBeVisible()
- await expect(page.getByRole('button', { name: '新建环境' })).toHaveCount(0)
- await expect(page.locator('.product-card')).toHaveCount(2)
+test('简洁首页、官方素材和三入口',async({page},info)=>{
+ await page.goto('./');await expect(page.getByRole('heading',{name:'你的 Claude 工作空间'})).toBeVisible()
+ await expect(page.locator('.product-card')).toHaveCount(2);await expect(page.getByText('正在开发中',{exact:true})).toBeVisible()
  expect(await page.locator('.brand img').getAttribute('src')).toContain('claude-symbol.svg')
- await page.screenshot({ path: info.outputPath('workspace-dark.png'), fullPage: true })
+ await expect(page.locator('.mini-browser,.mini-terminal')).toHaveCount(0)
+ await page.screenshot({path:info.outputPath('workspace-dark.png'),fullPage:true})
 })
-test('浏览器先建，Code复用同一环境，全局代理修改失效', async ({ page }, info) => {
- await page.goto('./'); await connect(page)
- await page.getByRole('button', { name: 'Claude.ai', exact: true }).click()
- await page.getByRole('button', { name: '创建并打开浏览器' }).click()
- await expect(page.getByText('preview-001', { exact: true })).toBeVisible()
- await page.screenshot({ path: info.outputPath('browser-start.png'), fullPage: true })
- await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
- await page.getByRole('button', { name: '安装并同步环境' }).click()
- await expect(page.getByRole('dialog')).not.toBeVisible()
- await expect(page.getByRole('button', { name: '启动终端', exact: true })).toBeVisible({ timeout: 10000 })
- await page.getByRole('button', { name: '启动终端', exact: true }).click()
- await expect(page.getByRole('button', { name: '停止终端' })).toBeVisible()
- await page.screenshot({ path: info.outputPath('code-terminal.png'), fullPage: true })
- await page.getByRole('button', { name: '全局连接', exact: true }).click()
- await page.getByLabel('代理地址').fill('new.example.com'); await page.getByRole('button', { name: '保存全局代理' }).click()
- await expect(page.getByRole('heading', { name: '等待检测' })).toBeVisible()
- await expect(page.getByText('未启动', { exact: true })).toBeVisible()
+test('四段式和URL导入，密码遮蔽，商家图片和链接',async({page},info)=>{
+ await page.goto('./');await page.getByRole('button',{name:'全局连接',exact:true}).click()
+ await page.getByLabel('代理信息识别框').fill('198.51.100.17:7085:demo-user:demo-password')
+ await page.getByRole('button',{name:'识别',exact:true}).click()
+ await expect(page.getByLabel('代理地址',{exact:true})).toHaveValue('198.51.100.17')
+ await expect(page.getByLabel('端口',{exact:true})).toHaveValue('7085')
+ await expect(page.getByLabel('代理用户名',{exact:true})).toHaveValue('demo-user')
+ await expect(page.getByLabel('代理密码',{exact:true})).toHaveAttribute('type','password')
+ await page.getByLabel('代理信息识别框').fill('socks5://hello:p%40ss@proxy.example.com:1080')
+ await page.getByRole('button',{name:'识别',exact:true}).click()
+ await expect(page.getByLabel('协议',{exact:true})).toHaveValue('socks5')
+ await expect(page.getByLabel('代理密码',{exact:true})).toHaveValue('p@ss')
+ await expect(page.getByText('中国大陆网络，无法直接使用代理服务，请您自行准备海外网络环境。')).toBeVisible()
+ expect(await page.locator('.provider-card a').first().getAttribute('href')).toContain('extendid=30d6N2VjYjI3MzQ4NDUyNTY3OTQxMTg5')
+ await expect(page.locator('.provider-card img')).toHaveJSProperty('naturalWidth',600)
+ await page.screenshot({path:info.outputPath('connection.png'),fullPage:true,mask:[page.getByLabel('代理用户名',{exact:true}),page.getByLabel('代理密码',{exact:true})]})
 })
-test('Code独立创建先提示差异，稍后浏览器复用配置', async ({ page }, info) => {
- await page.goto('./'); await connect(page)
- await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
- await page.getByRole('button', { name: '安装并同步环境' }).click()
- const d = page.getByRole('dialog'); await expect(d).toContainText('若代理 IP 也不同')
- await page.screenshot({ path: info.outputPath('code-new-warning.png'), fullPage: true })
- await d.getByRole('button', { name: '了解差异，继续设置 Code' }).click()
- await expect(page.getByRole('button', { name: '启动终端', exact: true })).toBeVisible({ timeout: 10000 })
- await page.getByRole('button', { name: 'Claude.ai', exact: true }).click(); await page.getByRole('button', { name: '创建并打开浏览器' }).click()
- await expect(page.getByText('preview-001', { exact: true })).toBeVisible()
+test('Code可单独安装，无沙箱门槛，浏览器独立创建',async({page},info)=>{
+ await page.goto('./');await connect(page);await page.getByRole('button',{name:'Claude Code',exact:true}).click()
+ await page.getByRole('button',{name:'安装官方 Code',exact:true}).click()
+ await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page.getByRole('button',{name:'启动终端',exact:true})).toBeVisible()
+ await page.getByRole('button',{name:'启动终端',exact:true}).click();await expect(page.getByRole('button',{name:'停止终端',exact:true})).toBeVisible()
+ await page.screenshot({path:info.outputPath('code-terminal.png'),fullPage:true})
+ await page.getByRole('button',{name:'停止终端',exact:true}).click()
+ await page.getByRole('button',{name:'Claude.ai',exact:true}).click();await page.getByRole('button',{name:'打开浏览器',exact:true}).click()
+ await expect(page.getByText('preview-001',{exact:true})).toBeVisible()
+ await expect(page.getByRole('button',{name:'下载浏览器内核'})).toHaveCount(0)
 })
-test('高级指纹、失败不能绕过隔离，登录不联网', async ({ page }, info) => {
- const writes: string[] = []; page.on('request', (r) => { if (r.method() !== 'GET') writes.push(r.url()) })
- await page.goto('./'); await page.getByRole('button', { name: '查看指纹信息' }).click()
- await expect(page.getByRole('dialog')).toContainText('Canvas 指纹样本')
- await page.screenshot({ path: info.outputPath('fingerprint.png'), fullPage: true })
- await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
- await page.getByRole('button', { name: '体验安装失败状态' }).click()
- await expect(page.getByRole('alert')).toContainText('已阻止启动')
- await expect(page.getByRole('button', { name: '跳过隔离' })).toHaveCount(0)
- await page.getByRole('button', { name: '开发体验' }).click(); await page.getByRole('button', { name: '注册', exact: true }).click(); await page.getByLabel('用户名', { exact: true }).fill('任意用户')
- await page.getByRole('button', { name: '进入工作空间' }).click(); expect(writes).toEqual([])
+test('指纹详情与开发登录仅交互',async({page})=>{
+ const writes:string[]=[];page.on('request',r=>{if(r.method()!=='GET')writes.push(r.url())})
+ await page.goto('./');await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:'浏览器指纹',exact:true}).click()
+ await expect(page.getByRole('dialog')).toContainText('Canvas 指纹样本');await page.keyboard.press('Escape')
+ await page.getByRole('button',{name:'开发体验',exact:true}).click();await page.getByRole('button',{name:'注册',exact:true}).click()
+ await page.getByLabel('用户名',{exact:true}).fill('任意用户');await page.getByRole('button',{name:'进入工作空间'}).click();expect(writes).toEqual([])
 })
-test('明暗主题与窄屏布局', async ({ page }, info) => {
- await page.goto('./'); await page.getByRole('button', { name: '切换浅色主题' }).click()
- await page.screenshot({ path: info.outputPath('workspace-light.png'), fullPage: true })
- await page.reload(); await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
- await page.setViewportSize({ width: 375, height: 812 }); await page.screenshot({ path: info.outputPath('mobile.png'), fullPage: true })
- expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
- await page.getByRole('button', { name: '全局连接', exact: true }).click(); await page.screenshot({ path: info.outputPath('mobile-connection.png'), fullPage: true })
- expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+test('明暗主题持久化和375px无横向溢出',async({page},info)=>{
+ await page.goto('./');await page.getByRole('button',{name:'切换浅色主题'}).click();await page.screenshot({path:info.outputPath('workspace-light.png'),fullPage:true})
+ await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','light')
+ await page.setViewportSize({width:375,height:812});await page.screenshot({path:info.outputPath('mobile.png'),fullPage:true})
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ await page.getByRole('button',{name:'全局连接',exact:true}).click();await page.screenshot({path:info.outputPath('mobile-connection.png'),fullPage:true})
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
 })
-
-test('管理面板预览支持生成、查询和撤销示例', async ({ page }, info) => {
- await page.goto('./#admin'); await page.getByRole('button', { name: '进入管理面板' }).click()
- await page.getByLabel('卡密备注').fill('页面体验'); await page.getByRole('button', { name: '生成永久卡密' }).click()
- await expect(page.getByRole('dialog')).toContainText('示例'); await page.getByRole('button', { name: '已保存' }).click()
- await page.getByLabel('搜索卡密或用户').fill('页面体验'); await expect(page.locator('tbody tr')).toHaveCount(1)
- await page.getByRole('button', { name: '撤销', exact: true }).click(); await page.getByRole('button', { name: '确认撤销' }).click(); await expect(page.getByText('已撤销', { exact: true })).toBeVisible()
- await page.getByLabel('搜索卡密或用户').fill(''); await page.getByRole('button', { name: '用户', exact: true }).click(); await expect(page.getByText('体验用户', { exact: true })).toBeVisible()
- await page.screenshot({ path: info.outputPath('admin-users-preview.png'), fullPage: true })
+test('800px高度主按钮可见，键盘和减少动画',async({page})=>{
+ await page.setViewportSize({width:1280,height:800});await page.emulateMedia({reducedMotion:'reduce'});await page.goto('./')
+ for(const name of ['打开 Claude.ai','安装并设置']){const b=await page.getByRole('button',{name,exact:true}).boundingBox();expect(b!.y+b!.height).toBeLessThan(800)}
+ await page.keyboard.press('Tab');await expect(page.getByRole('link',{name:'跳到主要内容'})).toBeFocused();await page.keyboard.press('Enter');await expect(page.locator('#workspace-main')).toBeFocused()
 })
-
-test('常见桌面高度可直接看到两个主操作，弹窗键盘可退出', async ({ page }) => {
- await page.setViewportSize({ width: 1280, height: 800 }); await page.goto('./')
- for(const name of ['打开 Claude.ai', '安装并设置']) { const box = await page.getByRole('button', { name, exact: true }).boundingBox(); expect(box).not.toBeNull(); expect(box!.y + box!.height).toBeLessThan(800) }
- await page.getByRole('button', { name: '查看指纹信息' }).click(); await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).not.toBeVisible()
+test('初始化错误可恢复',async({page})=>{
+ await page.addInitScript(()=>{window.go={main:{App:{Invoke:async()=>{throw new Error('测试：目录不可写')}}}}})
+ await page.goto('./');await expect(page.getByRole('alert')).toContainText('目录不可写');await expect(page.getByRole('button',{name:'重试',exact:true})).toBeVisible()
 })
-
-test('窄屏导航保持文字含义，键盘跳转与减少动画', async ({ page }) => {
- await page.setViewportSize({ width: 375, height: 812 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('./')
- await expect(page.getByRole('button', { name: 'Claude Code', exact: true }).locator('span')).toBeVisible()
- await page.keyboard.press('Tab'); await expect(page.getByRole('link', { name: '跳到主要内容' })).toBeFocused()
- await page.keyboard.press('Enter'); await expect(page.locator('#workspace-main')).toBeFocused()
- expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+for(const missing of [false,true])test(`原生桥接内核${missing?'缺失时提示重新解压':'随包直接启动'}，不触发下载`,async({page})=>{
+ await page.addInitScript(missing=>{
+  const calls:string[]=[];Object.defineProperty(window,'testCalls',{value:calls})
+  const s={proxy:{protocol:'http',host:'fixture.example.com',port:8080,username:''},hasPassword:false,revision:1,browser:{phase:'idle',message:'尚未启动'},code:{phase:'idle',message:'尚未安装'},network:{phase:'ready',message:'测试',observation:{ip:'203.0.113.12',at:new Date().toISOString()}},kernel:!missing,native:true,dataDir:'测试目录'}
+  window.go={main:{App:{Invoke:async(action:string)=>{if(action!=='snapshot')calls.push(action);if(action==='browser.start')s.browser={phase:'running',message:'已启动'};return JSON.stringify(s)}}}}
+ },missing)
+ await page.goto('./');await page.getByRole('button',{name:'打开 Claude.ai',exact:true}).click()
+ if(missing)await expect(page.getByRole('alert')).toContainText('重新解压完整 ZIP');else await expect(page.getByRole('button',{name:'激活浏览器',exact:true})).toBeVisible()
+ expect(await page.evaluate(()=>(window as unknown as{testCalls:string[]}).testCalls)).toEqual(missing?[]:['browser.start'])
 })
-
-test('桌面数据读取失败给出恢复入口，避免永久转圈', async ({ page }) => {
- await page.addInitScript(() => { window.go = { main: { App: { Invoke: async () => { throw new Error('测试：本地数据目录不可写') } } } } })
- await page.goto('./'); await expect(page.getByRole('heading', { name: '工作空间暂时无法打开' })).toBeVisible()
- await expect(page.getByRole('alert')).toContainText('本地数据目录不可写'); await expect(page.getByRole('button', { name: '重试读取' })).toBeVisible()
+test('管理面板预览生成和撤销',async({page})=>{
+ await page.goto('./#admin');await page.getByRole('button',{name:'进入管理面板'}).click();await page.getByLabel('卡密备注').fill('体验');await page.getByRole('button',{name:'生成永久卡密'}).click();await page.getByRole('button',{name:'已保存'}).click()
+ await page.getByLabel('搜索卡密或用户').fill('体验');await page.getByRole('button',{name:'撤销',exact:true}).first().click();await page.getByRole('button',{name:'确认撤销'}).click()
+ await expect(page.getByText('已撤销',{exact:true}).first()).toBeVisible()
 })
-
-for (const failDownload of [false, true]) {
- test(`桌面首次打开自动准备内核${failDownload ? '，失败后禁止启动' : '并启动浏览器'}`, async ({ page }) => {
-  await page.addInitScript((fail) => {
-   const calls: string[] = []
-   Object.defineProperty(window, 'testCalls', { value: calls })
-   const state = { proxy: { protocol: 'http', host: 'fixture.example.com', port: 8080, username: '' }, hasPassword: false, revision: 1, browser: { phase: 'idle', message: '尚未启动' }, code: { phase: 'idle', message: '尚未安装' }, network: { phase: 'ready', message: '测试连接', observation: { ip: '203.0.113.12', at: new Date().toISOString(), revision: 1 } }, kernel: false, native: true, dataDir: '测试目录' }
-   window.go = { main: { App: { Invoke: async (action: string) => {
-    if (action !== 'snapshot') calls.push(action)
-    if (action === 'kernel.install') { if (fail) throw new Error('测试：内核完整性校验失败'); state.kernel = true }
-    if (action === 'browser.start') state.browser = { phase: 'running', message: '测试：实际调用接口' }
-    return JSON.stringify(state)
-   } } } }
-  }, failDownload)
-  await page.goto('./')
-  await page.getByRole('button', { name: '打开 Claude.ai', exact: true }).click()
-  if (failDownload) {
-   await expect(page.getByText('测试：内核完整性校验失败', { exact: true })).toBeVisible()
-  } else {
-   await expect(page.getByRole('button', { name: '激活浏览器', exact: true })).toBeVisible()
-  }
-  expect(await page.evaluate(() => (window as unknown as { testCalls: string[] }).testCalls)).toEqual(failDownload ? ['kernel.install'] : ['kernel.install', 'browser.start'])
- })
-}

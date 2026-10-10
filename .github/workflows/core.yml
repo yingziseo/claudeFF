@@ -27,26 +27,6 @@ jobs:
         run: |
           test -z "$(gofmt -l internal cmd)"
           go test -race ./internal/...
-      - name: Check sandbox syntax
-        run: bash -n scripts/sandbox/*.sh
-      - name: Exercise whole-process isolation in Linux cloud
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y bubblewrap iptables
-          sudo useradd --create-home --shell /bin/bash claudeff
-          sudo mkdir -p /opt/claudeff /workspace
-          sudo chown claudeff:claudeff /workspace
-          sudo cp scripts/sandbox/launch.sh /opt/claudeff/launch.sh
-          sudo chmod 755 /opt/claudeff/launch.sh
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo bash scripts/sandbox/ci-test.sh
-      - name: Install and start actual official Code in isolation
-        run: |
-          CGO_ENABLED=0 go build -trimpath -o build/wsl-agent ./cmd/wsl-agent
-          sudo cp build/wsl-agent /opt/claudeff/wsl-agent
-          sudo cp scripts/sandbox/provision.sh scripts/sandbox/firewall.sh /opt/claudeff/
-          sudo chmod 700 /opt/claudeff/wsl-agent /opt/claudeff/provision.sh /opt/claudeff/firewall.sh
-          sudo python3 scripts/sandbox/install-ci.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

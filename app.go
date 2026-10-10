@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows || darwin
 
 package main
 
@@ -8,15 +8,16 @@ import (
 	"errors"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/yingziseo/claudeFF/internal/browser"
+	"github.com/yingziseo/claudeFF/internal/code"
 	"github.com/yingziseo/claudeFF/internal/licensing"
 	"github.com/yingziseo/claudeFF/internal/model"
 	"github.com/yingziseo/claudeFF/internal/proxy"
-	"github.com/yingziseo/claudeFF/internal/sandbox"
 	"github.com/yingziseo/claudeFF/internal/secret"
 	"github.com/yingziseo/claudeFF/internal/store"
+	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,7 +35,7 @@ type App struct {
 	root, bundle   string
 	db             *store.Store
 	browser        browser.Manager
-	code           *sandbox.Manager
+	code           *code.Manager
 	relay          *proxy.Relay
 	network        model.Status
 	mu             sync.Mutex
@@ -58,7 +59,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.network = model.Status{Phase: "idle", Message: "请检测全局代理"}
-	a.code = sandbox.New(a.root, a.bundle, func(event, data string) { runtime.EventsEmit(a.ctx, event, data) })
+	a.code = code.New(a.root, func(event, data string) { runtime.EventsEmit(a.ctx, event, data) })
 	if a.code.Installed() {
 		a.code.RestoreReady()
 	}
@@ -152,7 +153,7 @@ func (a *App) snapshot() (string, error) {
 	}
 
 	previous, _ := a.db.PreviousObservation()
-	s := model.Snapshot{Previous: previous, AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
+	s := model.Snapshot{Previous: previous, AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Project: a.code.Project(), Platform: desktopPlatform(), Kernel: browser.Find(filepath.Join(a.bundle, "browser")) != "", Native: true, DataDir: a.root}
 	raw, e := json.Marshal(struct {
 		model.Snapshot
 		Fingerprint map[string]any `json:"fingerprint"`
@@ -167,7 +168,7 @@ func (a *App) check(parent context.Context) error {
 	a.mu.Lock()
 	a.network = model.Status{Phase: "busy", Message: "正在通过全局代理检测出口"}
 	a.mu.Unlock()
-	ctx, cancel := context.WithTimeout(parent, 25*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
 	defer cancel()
 	o, e := proxy.Detect(ctx, p, rev)
 	a.mu.Lock()
@@ -281,6 +282,29 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	}
 	a.authMu.Unlock()
 
+	if action == "proxy.parse" || action == "proxy.clipboard" {
+		var input struct{ Value, Protocol string }
+		if e := json.Unmarshal([]byte(payload), &input); e != nil {
+			return "", errors.New("识别请求格式无效")
+		}
+		if action == "proxy.clipboard" {
+			var e error
+			input.Value, e = runtime.ClipboardGetText(a.ctx)
+			if e != nil {
+				return "", errors.New("剪贴板读取失败，请粘贴到识别框")
+			}
+		}
+		p, e := model.ParseProxyText(input.Value, input.Protocol)
+		if e != nil {
+			return "", e
+		}
+		raw, e := json.Marshal(p)
+		return string(raw), e
+	}
+	if action == "provider.open" {
+		runtime.BrowserOpenURL(a.ctx, "https://www.ipdeep.cn/?extendid=30d6N2VjYjI3MzQ4NDUyNTY3OTQxMTg5")
+		return "{}", nil
+	}
 	if action == "terminal.write" {
 		var p struct {
 			Data string `json:"data"`
@@ -307,12 +331,12 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		return a.snapshot()
 	}
 	if !a.operation.TryLock() {
-		return "", errors.New("另一项操作正在执行，请等待或停止隔离操作")
+		return "", errors.New("另一项操作正在执行，请等待或取消安装")
 	}
 	defer a.operation.Unlock()
 	var e error
 	switch action {
-	case "proxy.save":
+	case "proxy.save", "proxy.saveAndCheck":
 		if e = a.stopped(); e != nil {
 			break
 		}
@@ -322,6 +346,18 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		}
 		if e = json.Unmarshal([]byte(payload), &p); e != nil {
 			break
+		}
+		if strings.Contains(p.Host, ":") && net.ParseIP(p.Host) == nil {
+			var parsed model.Proxy
+			parsed, e = model.ParseProxyText(p.Host, p.Protocol)
+			if e != nil {
+				break
+			}
+			p.Host, p.Port, p.Protocol = parsed.Host, parsed.Port, parsed.Protocol
+			if parsed.Username != "" || parsed.Password != "" {
+				p.Username, p.Password = parsed.Username, parsed.Password
+				p.KeepPassword = false
+			}
 		}
 		if p.KeepPassword && p.Password == "" {
 			old, _, err := a.db.Proxy()
@@ -341,15 +377,15 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		a.mu.Lock()
 		a.network = model.Status{Phase: "idle", Message: "配置已更新，请重新检测"}
 		a.mu.Unlock()
+		if action == "proxy.saveAndCheck" {
+			e = a.check(businessCtx)
+		}
 	case "proxy.check":
 		e = a.check(businessCtx)
 	case "kernel.install":
-		if e = a.relayReady(); e != nil {
-			break
+		if browser.Find(filepath.Join(a.bundle, "browser")) == "" {
+			e = errors.New("发布包缺少内置指纹内核，请重新解压完整 ZIP")
 		}
-		client := proxy.ClientThrough(a.relay.URL())
-		client.Timeout = 20 * time.Minute
-		_, e = browser.Install(businessCtx, client, filepath.Join(a.root, "kernel"))
 	case "browser.start":
 		if e = a.check(businessCtx); e != nil {
 			break
@@ -367,7 +403,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		if e != nil {
 			break
 		}
-		e = a.browser.Start(businessCtx, browser.Find(filepath.Join(a.root, "kernel")), a.root, a.relay.URL(), *p, o)
+		e = a.browser.Start(businessCtx, browser.Find(filepath.Join(a.bundle, "browser")), a.root, a.relay.URL(), *p, o)
 	case "browser.stop":
 		a.browser.Stop()
 	case "profile.save":
@@ -401,59 +437,15 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		if e = a.check(businessCtx); e != nil {
 			break
 		}
-		var o *model.Observation
-		o, e = a.currentObservation()
-		if e != nil {
-			break
-		}
-		var p *model.Profile
-		p, e = a.db.Profile()
-		if e != nil {
-			break
-		}
-		if p == nil {
-			var consent struct {
-				AcceptNewProfile bool `json:"acceptNewProfile"`
-			}
-			json.Unmarshal([]byte(payload), &consent)
-			if !consent.AcceptNewProfile {
-				e = errors.New("请先确认直接创建环境的差异提示")
-				break
-			}
-			p, e = a.ensureProfile("code", o)
-			if e != nil {
-				break
-			}
-		}
 		if e = a.relayReady(); e != nil {
 			break
 		}
 		client := proxy.ClientThrough(a.relay.URL())
 		client.Timeout = 20 * time.Minute
-		if e = a.code.Prepare(installCtx, client); e != nil {
-			a.code.Fail(e)
-			break
-		}
-		var proxyConfig model.Proxy
-		proxyConfig, _, e = a.db.Proxy()
-		if e != nil {
-			break
-		}
-		e = a.code.Launch(installCtx, "install", proxyConfig, *p, o)
-		if e != nil {
-			a.code.Fail(e)
-			break
-		}
-		if e = a.code.Restart(installCtx); e != nil {
-			break
-		}
-		e = a.code.MarkInstalled()
-		a.code.RestoreReady()
-	case "system.enableWSL":
-		e = sandbox.Enable()
+		e = a.code.Install(installCtx, client, a.relay.URL())
 	case "code.start":
 		if !a.code.Installed() {
-			e = errors.New("请先完成 Code 安装")
+			e = errors.New("请先安装官方 Code")
 			break
 		}
 		if e = a.check(businessCtx); e != nil {
@@ -464,33 +456,21 @@ func (a *App) Invoke(action, payload string) (string, error) {
 		if e != nil {
 			break
 		}
-		var p *model.Profile
-		p, e = a.db.Profile()
-		if e != nil || p == nil {
-			e = errors.New("缺少稳定环境配置")
+		if e = a.relayReady(); e != nil {
 			break
 		}
-		var pc model.Proxy
-		pc, _, e = a.db.Proxy()
-		if e != nil {
-			break
-		}
-		e = a.code.Launch(businessCtx, "run", pc, *p, o)
+		e = a.code.Start(businessCtx, a.relay.URL(), o)
 	case "project.choose":
 		if e = a.stopped(); e != nil {
 			break
 		}
-		if !a.code.Installed() {
-			e = errors.New("请先准备隔离系统，再导入项目")
-			break
-		}
 		var path string
-		path, e = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择导入到隔离系统的项目（源目录不会被改写）"})
+		path, e = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择本机项目目录"})
 		if e == nil && path != "" {
-			e = a.code.ChooseProject(businessCtx, path)
+			e = a.code.ChooseProject(path)
 		}
 	case "data.open":
-		e = exec.Command("explorer.exe", a.root).Start()
+		e = openDataDirectory(a.root)
 	case "cache.clear":
 		if e = a.stopped(); e != nil {
 			break

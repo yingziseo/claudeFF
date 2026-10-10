@@ -6,5 +6,5 @@
  "frontend:install": "npm ci",
  "frontend:build": "npm run build",
  "author": {"name":"yingziseo"},
- "info": {"productName":"claudeFF", "productVersion":"0.2.0", "comments":"第三方个人 Claude 工作空间"}
+ "info": {"productName":"claudeFF", "productVersion":"0.3.0", "comments":"第三方个人 Claude 工作空间"}
 }

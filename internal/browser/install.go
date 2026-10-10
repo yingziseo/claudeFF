@@ -74,7 +74,7 @@ func Find(root string) string {
 		if e == nil && d.IsDir() && strings.HasPrefix(d.Name(), ".download-") {
 			return filepath.SkipDir
 		}
-		if e == nil && !d.IsDir() && strings.EqualFold(d.Name(), "chrome.exe") {
+		if e == nil && !d.IsDir() && (strings.EqualFold(d.Name(), "chrome.exe") || (d.Name() == "Chromium" && strings.Contains(p, ".app"))) {
 			result = p
 			return filepath.SkipAll
 		}
