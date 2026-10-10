@@ -2,7 +2,7 @@ name: License service and panel
 on:
   push:
     branches: [main]
-    paths: ['internal/licensing/**', 'cmd/license-server/**', 'frontend/**', 'go.*', 'docs/授权服务运行说明.md', '.github/workflows/licensing.yml']
+    paths: ['internal/licensing/**', 'cmd/license-server/**', 'frontend/**', 'go.*', 'build/collect-notices.py', 'docs/授权服务运行说明.md', 'docs/第三方许可与来源.md', '.github/workflows/licensing.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,6 +48,8 @@ jobs:
           cp build/license-server release/
           cp -r frontend/dist release/frontend/
           cp docs/授权服务运行说明.md release/README.md
+          cp docs/第三方许可与来源.md release/THIRD-PARTY.md
+          python3 build/collect-notices.py release/DEPENDENCY-NOTICES.txt
           tar -czf claudeFF-license-linux-x64.tar.gz -C release .
       - uses: actions/upload-artifact@v4
         if: always()

@@ -2,7 +2,7 @@ name: Windows portable client
 on:
   push:
     branches: [main]
-    paths: ['*.go', 'go.*', 'wails.json', 'build/appicon.png', 'internal/**', 'cmd/**', 'scripts/**', 'frontend/**', 'docs/Windows运行说明.md', 'docs/第三方许可与来源.md', '.github/workflows/windows.yml']
+    paths: ['*.go', 'go.*', 'wails.json', 'build/appicon.png', 'build/collect-notices.py', 'internal/**', 'cmd/**', 'scripts/**', 'frontend/**', 'docs/Windows运行说明.md', 'docs/第三方许可与来源.md', '.github/workflows/windows.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
       - run: go build -trimpath -o sandbox/wsl-agent ./cmd/wsl-agent
         env:
           CGO_ENABLED: '0'
-      - run: cp scripts/sandbox/*.sh sandbox/
+      - run: cp scripts/sandbox/provision.sh scripts/sandbox/firewall.sh scripts/sandbox/launch.sh sandbox/
       - uses: actions/upload-artifact@v4
         with:
           name: sandbox-agent
@@ -77,6 +77,8 @@ jobs:
         run: |
           Copy-Item docs/Windows运行说明.md build/bin/README.md
           Copy-Item docs/第三方许可与来源.md build/bin/THIRD-PARTY.md
+          python build/collect-notices.py build/bin/DEPENDENCY-NOTICES.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency notices collection failed' }
           Get-ChildItem build/bin -Recurse -File | ForEach-Object { "$(($_ | Get-FileHash -Algorithm SHA256).Hash)  $($_.FullName.Substring((Resolve-Path 'build/bin').Path.Length + 1))" } | Set-Content build/bin/SHA256SUMS.txt
           Compress-Archive -Path build/bin/* -DestinationPath claudeFF-windows-x64.zip
       - uses: actions/upload-artifact@v4
