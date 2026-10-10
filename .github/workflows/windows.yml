@@ -51,6 +51,11 @@ jobs:
         working-directory: frontend
       - run: go mod tidy
       - run: go test ./internal/...
+      - run: go test .
+      - name: Run actual fingerprint kernel through test proxy
+        env:
+          CLAUDEFF_KERNEL_SMOKE: '1'
+        run: go test -v ./internal/browser -run TestWindowsFingerprintKernel -timeout 10m
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
       - run: wails build -platform windows/amd64 -skipbindings -s
       - name: Windows GUI process smoke

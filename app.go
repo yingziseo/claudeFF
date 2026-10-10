@@ -466,6 +466,28 @@ func (a *App) Invoke(action, payload string) (string, error) {
 	return a.snapshot()
 }
 
+func (a *App) checkLicense() {
+	a.authMu.Lock()
+	if a.license == nil || a.license.Token == "" {
+		a.authMu.Unlock()
+		return
+	}
+	client := *a.license
+	a.authMu.Unlock()
+	bs, _ := a.browser.State()
+	cs := a.code.State()
+	e := client.Verify(a.ctx, bs.Phase == "running", cs.Phase == "running")
+	a.authMu.Lock()
+	same := a.license != nil && a.license.Token == client.Token
+	if same {
+		a.licensed = e == nil
+	}
+	a.authMu.Unlock()
+	if same && e != nil {
+		a.browser.Stop()
+		a.code.Stop()
+	}
+}
 func (a *App) licenseMonitor() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -474,26 +496,7 @@ func (a *App) licenseMonitor() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			a.authMu.Lock()
-			if a.license == nil || a.license.Token == "" {
-				a.authMu.Unlock()
-				continue
-			}
-			client := *a.license
-			a.authMu.Unlock()
-			bs, _ := a.browser.State()
-			cs := a.code.State()
-			e := client.Verify(a.ctx, bs.Phase == "running", cs.Phase == "running")
-			a.authMu.Lock()
-			same := a.license != nil && a.license.Token == client.Token
-			if same {
-				a.licensed = e == nil
-			}
-			a.authMu.Unlock()
-			if same && e != nil {
-				a.browser.Stop()
-				a.code.Stop()
-			}
+			a.checkLicense()
 		}
 	}
 }
