@@ -2,7 +2,15 @@
 
 package main
 
-import "os/exec"
+import (
+	"os/exec"
+	"runtime"
+)
 
-func desktopPlatform() string             { return "macOS" }
+func desktopPlatform() string {
+	if runtime.GOARCH == "arm64" {
+		return "macOS · Apple Silicon"
+	}
+	return "macOS · Intel"
+}
 func openDataDirectory(path string) error { return exec.Command("open", path).Start() }

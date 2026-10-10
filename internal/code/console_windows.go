@@ -14,7 +14,8 @@ import (
 
 type winConsole struct {
 	*conpty.ConPty
-	once sync.Once
+	once    sync.Once
+	process windows.Handle
 }
 
 func (w *winConsole) Wait(ctx context.Context) error {
@@ -26,10 +27,9 @@ func (w *winConsole) Wait(ctx context.Context) error {
 }
 func (w *winConsole) Close() error {
 	w.once.Do(func() {
-		p, e := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(w.Pid()))
-		if e == nil {
-			windows.TerminateProcess(p, 0)
-			windows.CloseHandle(p)
+		if w.process != 0 {
+			windows.TerminateProcess(w.process, 0)
+			windows.CloseHandle(w.process)
 		}
 		w.ConPty.Close()
 	})
@@ -40,6 +40,11 @@ func startConsole(exe, dir string, env []string) (console, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &winConsole{ConPty: p}, nil
+	handle, e := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(p.Pid()))
+	if e != nil {
+		p.Close()
+		return nil, e
+	}
+	return &winConsole{ConPty: p, process: handle}, nil
 }
 func hide(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true} }

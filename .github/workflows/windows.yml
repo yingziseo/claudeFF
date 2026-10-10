@@ -46,7 +46,7 @@ jobs:
         env:
           CLAUDEFF_KERNEL_SMOKE: '1'
           CLAUDEFF_KERNEL_DIR: '${{ github.workspace }}/build/bin/browser'
-        run: go test -v ./internal/browser -run TestWindowsFingerprintKernel -timeout 10m
+        run: go test -v ./internal/browser -run TestFingerprintKernel -timeout 10m
       - name: Official native Code installation and ConPTY
         env:
           CLAUDEFF_CODE_SMOKE: '1'

@@ -47,6 +47,7 @@ jobs:
       - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
       - run: wails build -platform darwin/${{ matrix.arch }} -skipbindings -s
       - name: Bundle complete official fingerprint Chromium
+        if: matrix.arch == 'arm64'
         run: |
           curl --fail --location --retry 3 'https://github.com/adryfish/fingerprint-chromium/releases/download/148.0.7778.215/ungoogled-chromium_148.0.7778.215-1.1_macos.dmg' -o "$RUNNER_TEMP/kernel.dmg"
           printf '%s  %s\n' b72f091e2e1a7583eed389c4b8e3534ed355e568af8c8bbf8fc30a25e23ca679 "$RUNNER_TEMP/kernel.dmg" | shasum -a 256 -c -
@@ -57,6 +58,12 @@ jobs:
           hdiutil detach "$RUNNER_TEMP/kernel-mount"
           file build/bin/claudeFF.app/Contents/MacOS/browser/Chromium.app/Contents/MacOS/Chromium
           build/bin/claudeFF.app/Contents/MacOS/browser/Chromium.app/Contents/MacOS/Chromium --version
+      - name: Actual Apple Silicon browser, exit and conversation restoration
+        if: matrix.arch == 'arm64'
+        env:
+          CLAUDEFF_KERNEL_SMOKE: '1'
+          CLAUDEFF_KERNEL_DIR: '${{ github.workspace }}/build/bin/claudeFF.app/Contents/MacOS/browser'
+        run: go test -v ./internal/browser -run TestFingerprintKernel -timeout 10m
       - name: macOS GUI process smoke
         run: |
           build/bin/claudeFF.app/Contents/MacOS/claudeFF &

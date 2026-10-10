@@ -3,7 +3,7 @@ export type Observation = { ip: string; country: string; countryCode?: string; c
 export type Status = { version?: string; phase: Phase; message: string; observation?: Observation }
 export type ProxyConfig = { protocol: string; host: string; port: number; username: string; password?: string }
 export type Profile = { id: string; revision: number; source: string; seed: string; language: string; timezone: string; createdAt: string }
-export type Snapshot = { platform?: string; project?: string; proxy: ProxyConfig; hasPassword: boolean; revision: number; profile?: Profile; browser: Status; code: Status; network: Status; kernel: boolean; native: boolean; dataDir: string; previous?: Observation; authRequired?: boolean; authorized?: boolean; fingerprint?: Record<string, unknown> }
+export type Snapshot = { browserSupported?: boolean; platform?: string; project?: string; proxy: ProxyConfig; hasPassword: boolean; revision: number; profile?: Profile; browser: Status; code: Status; network: Status; kernel: boolean; native: boolean; dataDir: string; previous?: Observation; authRequired?: boolean; authorized?: boolean; fingerprint?: Record<string, unknown> }
 type Native = { Invoke: (action: string, payload: string) => Promise<string> }
 declare global { interface Window { go?: { main?: { App?: Native } }; runtime?: { EventsOn: (name: string, cb: (data: string) => void) => () => void } } }
 export const isNative = () => Boolean(window.go?.main?.App)

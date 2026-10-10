@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows || darwin
 
 package browser
 
@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-func TestWindowsFingerprintKernelThroughAuthenticatedGateway(t *testing.T) {
+func TestFingerprintKernelThroughAuthenticatedGateway(t *testing.T) {
 	if os.Getenv("CLAUDEFF_KERNEL_SMOKE") != "1" {
 		t.Skip("kernel runtime check is cloud-only")
 	}

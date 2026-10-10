@@ -169,6 +169,12 @@ func (m *Manager) trackSession(ctx context.Context) {
 	}
 }
 func browserExit(ctx context.Context) (string, string, int64, error) {
+	// Bind a new target's event loop to the full probe lifetime before creating
+	// per-request deadlines. Canceling the first Run's context otherwise freezes
+	// later evaluations even when navigation itself succeeded.
+	if e := chromedp.Run(ctx); e != nil {
+		return "", "", 0, e
+	}
 	for _, endpoint := range proxy.DetectionEndpoints() {
 		limited, done := context.WithTimeout(ctx, 8*time.Second)
 		start := time.Now()

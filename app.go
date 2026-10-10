@@ -153,7 +153,7 @@ func (a *App) snapshot() (string, error) {
 	}
 
 	previous, _ := a.db.PreviousObservation()
-	s := model.Snapshot{Previous: previous, AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Project: a.code.Project(), Platform: desktopPlatform(), Kernel: browser.Find(filepath.Join(a.bundle, "browser")) != "", Native: true, DataDir: a.root}
+	s := model.Snapshot{BrowserSupported: browser.Supported(), Previous: previous, AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Project: a.code.Project(), Platform: desktopPlatform(), Kernel: browser.Find(filepath.Join(a.bundle, "browser")) != "", Native: true, DataDir: a.root}
 	raw, e := json.Marshal(struct {
 		model.Snapshot
 		Fingerprint map[string]any `json:"fingerprint"`
@@ -387,6 +387,10 @@ func (a *App) Invoke(action, payload string) (string, error) {
 			e = errors.New("发布包缺少内置指纹内核，请重新解压完整 ZIP")
 		}
 	case "browser.start":
+		if !browser.Supported() {
+			e = errors.New("当前 Mac 内核仅支持 Apple Silicon，Claude Code 可正常使用")
+			break
+		}
 		if e = a.check(businessCtx); e != nil {
 			break
 		}

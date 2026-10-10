@@ -83,7 +83,11 @@ func (m *Manager) Install(ctx context.Context, client *http.Client, relay string
 	m.set("busy", "正在下载官方 Claude Code")
 	defer func() {
 		if ctx.Err() != nil {
-			m.set("idle", "安装已取消，可重试")
+			if m.Installed() {
+				m.RestoreReady()
+			} else {
+				m.set("idle", "安装已取消，可重试")
+			}
 		}
 	}()
 	staged, err := fetchOfficial(ctx, client, m.root)
