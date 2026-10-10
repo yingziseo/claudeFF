@@ -1,0 +1,75 @@
+name: Frontend preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['frontend/**', '.github/workflows/frontend-preview.yml']
+  pull_request:
+    paths: ['frontend/**', '.github/workflows/frontend-preview.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Bootstrap lockfile only when not yet present
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+          fi
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck and build
+        run: npm run build
+      - name: Install cloud browser and Chinese fonts
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get install -y fonts-noto-cjk
+      - name: Check interactions and capture screenshots
+        run: npm run test:e2e
+      - name: Upload dependency lock and preview evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-evidence
+          retention-days: 14
+          path: |
+            frontend/package-lock.json
+            frontend/playwright-report/
+            frontend/test-results/
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: frontend/dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: check-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy preview
+        id: deployment
+        uses: actions/deploy-pages@v4
