@@ -26,6 +26,8 @@ const [host,port,username,...tail]=raw.split(':');const password=tail.join(':')
 for(const v of [raw,username,password])console.log(`::add-mask::${v}`)
 const dir=path.join(process.env.RUNNER_TEMP,'claudeff-native-ui');fs.mkdirSync(dir,{recursive:true});fs.mkdirSync('native-evidence',{recursive:true})
 const env={...process.env,APPDATA:dir,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=9223 --remote-debugging-address=127.0.0.1'};delete env.CLAUDEFF_TEST_PROXY
+const debugPolicy='HKLM:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments'
+const policy=spawnSync('powershell.exe',['-NoProfile','-Command',`New-Item -Path '${debugPolicy}' -Force | Out-Null; New-ItemProperty -Path '${debugPolicy}' -Name 'claudeFF.exe' -Value '--remote-debugging-port=9223 --remote-debugging-address=127.0.0.1' -PropertyType String -Force | Out-Null`],{encoding:'utf8',windowsHide:true});if(policy.status!==0)throw new Error('Cloud debugging policy setup failed')
 let stage='start desktop',browser,processHandle,page,stderr='',processExit=null,lastConnectError=''
 const clean=v=>{let s=String(v);for(const secret of [raw,username,password])if(secret)s=s.split(secret).join('[redacted]');return s.slice(0,12000)}
 const launch=()=>{const p=spawn(path.resolve('build/bin/claudeFF.exe'),[],{env,stdio:['ignore','ignore','pipe']});p.stderr.on('data',b=>{stderr=(stderr+b.toString()).slice(-16000)});p.on('exit',code=>{processExit=code});return p}
@@ -60,7 +62,8 @@ try{
  fs.writeFileSync('native-evidence/result.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report))
 }catch(e){
  const failure={stage,error:clean(e.message),processExit,stderr:clean(stderr),connectionError:lastConnectError}
+ if(stage==='start desktop'&&processHandle){const diag=spawnSync('powershell.exe',['-NoProfile','-File','frontend/tests/desktop-diagnose.ps1','-TaskProcessId',String(processHandle.pid)],{encoding:'utf8',windowsHide:true,timeout:15000});failure.desktop=clean(diag.stdout||diag.stderr||'')}
  if(page){failure.alerts=clean((await page.locator('[role=alert]').allTextContents().catch(()=>[])).join(' '));await page.screenshot({path:'native-evidence/failure.png',fullPage:true,mask:[page.locator('input'),page.locator('.property dd'),page.locator('.connection-strip div>span')]}).catch(()=>{})}
  fs.writeFileSync('native-evidence/failure.json',JSON.stringify(failure,null,2));console.error(JSON.stringify(failure));process.exitCode=1
 }
-finally{if(browser)await browser.close().catch(()=>{});if(processHandle)processHandle.kill();spawnSync('powershell.exe',['-NoProfile','-Command','Set-Clipboard -Value ""'],{stdio:'ignore',windowsHide:true});if(fixture)fixture.close()}
+finally{if(browser)await browser.close().catch(()=>{});if(processHandle)processHandle.kill();spawnSync('powershell.exe',['-NoProfile','-Command','Set-Clipboard -Value ""'],{stdio:'ignore',windowsHide:true});if(fixture)fixture.close();spawnSync('powershell.exe',['-NoProfile','-Command',`Remove-ItemProperty -Path '${debugPolicy}' -Name 'claudeFF.exe' -ErrorAction SilentlyContinue`],{stdio:'ignore',windowsHide:true})}

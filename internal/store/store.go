@@ -4,15 +4,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/yingziseo/claudeFF/internal/model"
 	_ "modernc.org/sqlite"
 )
 
-var ErrSecretUnavailable = errors.New("无法解密代理秘密，请在原 Windows 用户下运行或重新配置")
+var ErrSecretUnavailable = errors.New("无法读取代理密码，请允许系统秘密存储访问或重新填写密码")
 
 type Protector interface {
 	Protect([]byte) ([]byte, error)
@@ -43,7 +45,7 @@ func Open(dir string, p Protector) (*Store, error) {
 		return nil, errors.New("数据库来自更新版本，请使用对应客户端；未覆盖数据")
 	}
 
-	if _, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+	if _, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;
  CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), proxy BLOB NOT NULL, secret BLOB, revision INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS runtime_history(name TEXT PRIMARY KEY,value BLOB NOT NULL);
@@ -70,6 +72,31 @@ func (s *Store) Proxy() (model.Proxy, int, error) {
 	var p model.Proxy
 	if e = json.Unmarshal(raw, &p); e != nil {
 		return p, rev, e
+	}
+	// Repair V2 rows where provider text was mistakenly stored as a hostname.
+	// Never return that legacy string in a public snapshot, even if migration fails.
+	if strings.Contains(p.Host, ":") && net.ParseIP(p.Host) == nil {
+		normalized, err := model.ParseProxyText(p.Host, p.Protocol)
+		if err != nil {
+			return model.Proxy{}, rev, errors.New("旧代理格式无效，请重新粘贴识别；浏览器数据已保留")
+		}
+		if normalized.Username == "" {
+			normalized.Username = p.Username
+		}
+		if normalized.Password != "" {
+			enc, err = s.protector.Protect([]byte(normalized.Password))
+			if err != nil {
+				return normalized.Public(), rev, ErrSecretUnavailable
+			}
+		}
+		public, _ := json.Marshal(normalized.Public())
+		if _, err = s.db.Exec("UPDATE settings SET proxy=?,secret=?,revision=revision+1 WHERE id=1", public, enc); err != nil {
+			return normalized.Public(), rev, errors.New("旧代理格式修复失败，请重试")
+		}
+		rev++
+		p = normalized
+		// Finish the credential repair without retaining old WAL frames.
+		_, _ = s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	}
 	if len(enc) > 0 {
 		b, e := s.protector.Unprotect(enc)

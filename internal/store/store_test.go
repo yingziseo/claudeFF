@@ -66,3 +66,29 @@ func TestFutureSchemaIsNotOverwritten(t *testing.T) {
 		t.Fatal("newer schema accepted")
 	}
 }
+
+func TestLegacyProviderHostnameIsRepairedWithoutLeakingSecret(t *testing.T) {
+	s, e := Open(t.TempDir(), fakeVault{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	if _, e = s.db.Exec(`INSERT INTO settings(id,proxy,revision) VALUES(1,?,1)`, []byte(`{"protocol":"http","host":"198.51.100.8:7085:legacy-user:legacy-test-secret","port":8080,"username":""}`)); e != nil {
+		t.Fatal(e)
+	}
+	p, rev, e := s.Proxy()
+	if e != nil || p.Host != "198.51.100.8" || p.Port != 7085 || p.Username != "legacy-user" || p.Password != "legacy-test-secret" || rev != 2 {
+		t.Fatal("legacy provider format was not repaired")
+	}
+	var raw, secret []byte
+	if e = s.db.QueryRow("SELECT proxy,secret FROM settings WHERE id=1").Scan(&raw, &secret); e != nil {
+		t.Fatal(e)
+	}
+	if bytes.Contains(raw, []byte("legacy-test-secret")) || !bytes.HasPrefix(secret, []byte("protected:")) {
+		t.Fatal("legacy authentication text exposed")
+	}
+	_, rev, e = s.Proxy()
+	if e != nil || rev != 2 {
+		t.Fatal("migration repeated")
+	}
+}

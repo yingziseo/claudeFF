@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
@@ -60,14 +61,16 @@ func (m *Manager) restoreTabs(ctx context.Context, home string) error {
 					return e
 				}
 			} else if controlBlank {
-				if e := chromedp.Run(ctx, chromedp.Navigate(home), chromedp.ActionFunc(func(c context.Context) error { return target.CloseTarget(t.TargetID).Do(c) })); e != nil {
+				if e := chromedp.Run(ctx, chromedp.Navigate(home), chromedp.ActionFunc(func(c context.Context) error {
+					return target.CloseTarget(t.TargetID).Do(cdp.WithExecutor(c, chromedp.FromContext(ctx).Browser))
+				})); e != nil {
 					return e
 				}
 			} else {
 				if e := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
 					_, e := target.CreateTarget(home).Do(c)
 					if e == nil {
-						e = target.CloseTarget(t.TargetID).Do(c)
+						e = target.CloseTarget(t.TargetID).Do(cdp.WithExecutor(c, chromedp.FromContext(ctx).Browser))
 					}
 					return e
 				})); e != nil {
