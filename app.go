@@ -121,7 +121,8 @@ func (a *App) snapshot() (string, error) {
 	a.mu.Lock()
 	network := a.network
 	a.mu.Unlock()
-	s := model.Snapshot{AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
+	previous, _ := a.db.PreviousObservation()
+	s := model.Snapshot{Previous: previous, AuthRequired: releaseMode == "production", Authorized: true, Proxy: p.Public(), HasPassword: p.Password != "", Revision: revision, Profile: profile, Browser: bs, Code: a.code.State(), Network: network, Kernel: browser.Find(filepath.Join(a.root, "kernel")) != "", Native: true, DataDir: a.root}
 	raw, e := json.Marshal(struct {
 		model.Snapshot
 		Fingerprint map[string]any `json:"fingerprint"`
@@ -146,6 +147,7 @@ func (a *App) check() error {
 		return e
 	}
 	a.network = model.Status{Phase: "ready", Message: "全局代理出口已检测", Observation: o}
+	a.db.Record("network", o)
 	return nil
 }
 func (a *App) relayReady() error {
@@ -319,7 +321,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 			break
 		}
 		var p *model.Profile
-		p, e = a.db.EnsureProfile("browser")
+		p, e = a.ensureProfile("browser", o)
 		if e != nil {
 			break
 		}
@@ -376,7 +378,7 @@ func (a *App) Invoke(action, payload string) (string, error) {
 				e = errors.New("请先确认直接创建环境的差异提示")
 				break
 			}
-			p, e = a.db.EnsureProfile("code")
+			p, e = a.ensureProfile("code", o)
 			if e != nil {
 				break
 			}
@@ -499,4 +501,35 @@ func (a *App) licenseMonitor() {
 			a.checkLicense()
 		}
 	}
+}
+
+func (a *App) ensureProfile(source string, o *model.Observation) (*model.Profile, error) {
+	existing, e := a.db.Profile()
+	if e != nil {
+		return nil, e
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	p, e := a.db.EnsureProfile(source)
+	if e != nil {
+		return nil, e
+	}
+	if o != nil {
+		if o.Timezone != "" {
+			p.Timezone = o.Timezone
+		}
+		switch o.CountryCode {
+		case "GB":
+			p.Language = "en-GB"
+		case "JP":
+			p.Language = "ja-JP"
+		case "CN":
+			p.Language = "zh-CN"
+		}
+	}
+	if e = a.db.SaveProfile(*p); e != nil {
+		return nil, e
+	}
+	return p, nil
 }

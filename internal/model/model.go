@@ -68,12 +68,13 @@ func (p Profile) Validate() error {
 }
 
 type Observation struct {
-	IP       string    `json:"ip"`
-	Country  string    `json:"country"`
-	Timezone string    `json:"timezone"`
-	Latency  int64     `json:"latency"`
-	At       time.Time `json:"at"`
-	Revision int       `json:"revision"`
+	CountryCode string    `json:"countryCode"`
+	IP          string    `json:"ip"`
+	Country     string    `json:"country"`
+	Timezone    string    `json:"timezone"`
+	Latency     int64     `json:"latency"`
+	At          time.Time `json:"at"`
+	Revision    int       `json:"revision"`
 }
 type Status struct {
 	Phase       string       `json:"phase"`
@@ -81,16 +82,17 @@ type Status struct {
 	Observation *Observation `json:"observation,omitempty"`
 }
 type Snapshot struct {
-	AuthRequired bool     `json:"authRequired"`
-	Authorized   bool     `json:"authorized"`
-	Proxy        Proxy    `json:"proxy"`
-	HasPassword  bool     `json:"hasPassword"`
-	Revision     int      `json:"revision"`
-	Profile      *Profile `json:"profile,omitempty"`
-	Browser      Status   `json:"browser"`
-	Code         Status   `json:"code"`
-	Network      Status   `json:"network"`
-	Kernel       bool     `json:"kernel"`
-	Native       bool     `json:"native"`
-	DataDir      string   `json:"dataDir"`
+	Previous     *Observation `json:"previous,omitempty"`
+	AuthRequired bool         `json:"authRequired"`
+	Authorized   bool         `json:"authorized"`
+	Proxy        Proxy        `json:"proxy"`
+	HasPassword  bool         `json:"hasPassword"`
+	Revision     int          `json:"revision"`
+	Profile      *Profile     `json:"profile,omitempty"`
+	Browser      Status       `json:"browser"`
+	Code         Status       `json:"code"`
+	Network      Status       `json:"network"`
+	Kernel       bool         `json:"kernel"`
+	Native       bool         `json:"native"`
+	DataDir      string       `json:"dataDir"`
 }

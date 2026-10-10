@@ -83,3 +83,19 @@ func TestDetectValidatesIP(t *testing.T) {
 		t.Fatal("invalid result accepted")
 	}
 }
+func TestGeographyDoesNotInventUnknowns(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"success":true,"ip":"203.0.113.8","country":"United States","country_code":"US","timezone":{"id":"America/Los_Angeles"}}`))
+	}))
+	defer s.Close()
+	o := &model.Observation{IP: "203.0.113.8"}
+	GeoWith(context.Background(), http.DefaultClient, s.URL, o)
+	if o.Timezone != "America/Los_Angeles" || o.CountryCode != "US" {
+		t.Fatal(o)
+	}
+	other := &model.Observation{IP: "203.0.113.9"}
+	GeoWith(context.Background(), http.DefaultClient, s.URL, other)
+	if other.Country != "" {
+		t.Fatal("mismatched exit geography applied")
+	}
+}

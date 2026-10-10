@@ -44,6 +44,7 @@ func Open(dir string, p Protector) (*Store, error) {
 	if _, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), proxy BLOB NOT NULL, secret BLOB, revision INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL);
+ CREATE TABLE IF NOT EXISTS runtime_history(name TEXT PRIMARY KEY,value BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS license_session(id INTEGER PRIMARY KEY CHECK(id=1),secret BLOB NOT NULL);
  PRAGMA user_version=1;`); e != nil {
 		db.Close()
@@ -176,4 +177,29 @@ func (s *Store) SaveLicenseToken(token string) error {
 	}
 	_, e = s.db.Exec("INSERT INTO license_session(id,secret) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET secret=excluded.secret", sealed)
 	return e
+}
+func (s *Store) Record(name string, value any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, e := json.Marshal(value)
+	if e != nil {
+		return e
+	}
+	_, e = s.db.Exec("INSERT INTO runtime_history(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value", name, raw)
+	return e
+}
+func (s *Store) PreviousObservation() (*model.Observation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var raw []byte
+	e := s.db.QueryRow("SELECT value FROM runtime_history WHERE name='network'").Scan(&raw)
+	if errors.Is(e, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if e != nil {
+		return nil, e
+	}
+	var o model.Observation
+	e = json.Unmarshal(raw, &o)
+	return &o, e
 }

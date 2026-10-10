@@ -11,6 +11,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/yingziseo/claudeFF/internal/model"
 	"github.com/yingziseo/claudeFF/internal/proxy"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -122,6 +123,12 @@ func run() error {
 	if e = execute("/bin/bash", "/opt/claudeff/firewall.sh", fmt.Sprint(relay.Port())); e != nil {
 		return e
 	}
+	if _, e = os.Stat("/usr/share/zoneinfo/" + cfg.Profile.Timezone); e != nil {
+		return errors.New("隔离系统缺少所选时区")
+	}
+	if e = execute("ln", "-snf", "/usr/share/zoneinfo/"+cfg.Profile.Timezone, "/etc/localtime"); e != nil {
+		return e
+	}
 	// Detect from Code's restricted UID, rather than trusting the root service's request.
 	emit("progress", "正在同步语言、时区，并核验隔离环境出口")
 	check := exec.CommandContext(ctx, "runuser", "-u", "claudeff", "--", "/bin/bash", "/opt/claudeff/launch.sh", "/usr/bin/curl", "--fail", "--silent", "--show-error", "--max-time", "20", proxy.DetectionURL)
@@ -133,7 +140,7 @@ func run() error {
 	var result struct {
 		IP string `json:"ip"`
 	}
-	if json.Unmarshal(output, &result) != nil {
+	if json.Unmarshal(output, &result) != nil || net.ParseIP(result.IP) == nil {
 		return errors.New("隔离出口返回无效数据")
 	}
 	emit("observation", model.Observation{IP: result.IP, At: time.Now().UTC(), Revision: cfg.Revision})
