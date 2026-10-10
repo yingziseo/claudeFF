@@ -46,7 +46,7 @@ test('Code独立创建先提示差异，稍后浏览器复用配置', async ({ p
 test('高级指纹、失败不能绕过隔离，登录不联网', async ({ page }, info) => {
  const writes: string[] = []; page.on('request', (r) => { if (r.method() !== 'GET') writes.push(r.url()) })
  await page.goto('./'); await page.getByRole('button', { name: '查看指纹信息' }).click()
- await expect(page.getByRole('dialog')).toContainText('Canvas / Audio / Fonts')
+ await expect(page.getByRole('dialog')).toContainText('Canvas 指纹样本')
  await page.screenshot({ path: info.outputPath('fingerprint.png'), fullPage: true })
  await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
  await page.getByRole('button', { name: '体验安装失败状态' }).click()

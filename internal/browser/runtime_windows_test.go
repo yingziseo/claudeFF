@@ -5,6 +5,7 @@ package browser
 import (
 	"context"
 	"encoding/base64"
+	"github.com/chromedp/chromedp"
 	"github.com/yingziseo/claudeFF/internal/model"
 	"github.com/yingziseo/claudeFF/internal/proxy"
 	"io"
@@ -84,5 +85,29 @@ func TestWindowsFingerprintKernelThroughAuthenticatedGateway(t *testing.T) {
 	if fingerprint["userAgent"] == nil || fingerprint["webgl"] == nil {
 		t.Fatal("fingerprint observations missing")
 	}
+	hash := fingerprint["canvas"]
+	if hash == nil || hash == "不可用" {
+		t.Fatal("canvas observation missing")
+	}
+	probe, closeProbe := chromedp.NewContext(manager.ctx)
+	if e = chromedp.Run(probe, chromedp.Navigate("https://example.com"), chromedp.Evaluate(`localStorage.setItem('claudeff-ci-retain','verified')`, nil)); e != nil {
+		t.Fatal(e)
+	}
+	closeProbe()
+	manager.Stop()
+	if e = manager.Start(ctx, exe, root, relay.URL(), profile, observed); e != nil {
+		t.Fatal(e)
+	}
+	_, second := manager.State()
+	if second["canvas"] != hash {
+		t.Fatal("same stable seed changed canvas observation")
+	}
+	probe, closeProbe = chromedp.NewContext(manager.ctx)
+	defer closeProbe()
+	var retained string
+	if e = chromedp.Run(probe, chromedp.Navigate("https://example.com"), chromedp.Evaluate(`localStorage.getItem('claudeff-ci-retain')`, &retained)); e != nil || retained != "verified" {
+		t.Fatal("browser data not retained", retained, e)
+	}
+	t.Log("Verified stable canvas and persistent browser local storage across restart.")
 	t.Log("Verified Windows fingerprint kernel, authenticated gateway, actual exit IP, default pages, language/timezone and browser observations. This is a test gateway, not a residential-IP claim.")
 }
