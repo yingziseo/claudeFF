@@ -8,7 +8,6 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/yingziseo/claudeFF/internal/model"
-	"github.com/yingziseo/claudeFF/internal/proxy"
 	"html/template"
 	"net"
 	"net/http"

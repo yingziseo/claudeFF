@@ -20,6 +20,16 @@ type ConnectionError struct{ Message string }
 
 func (e *ConnectionError) Error() string   { return e.Message }
 func connectionError(message string) error { return &ConnectionError{Message: message} }
+func connectionCause(cause error, message string) error {
+	var timeout net.Error
+	if errors.Is(cause, context.DeadlineExceeded) || (errors.As(cause, &timeout) && timeout.Timeout()) {
+		return connectionError("代理连接超时，请检查网关、端口和海外网络连接")
+	}
+	if errors.Is(cause, context.Canceled) {
+		return connectionError("代理检测已取消")
+	}
+	return connectionError(message)
+}
 
 func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 	if e := p.Validate(); e != nil {
@@ -37,7 +47,7 @@ func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 		}
 		c, e := s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
 		if e != nil {
-			return nil, connectionError("SOCKS5 连接或认证失败，请确认用户名、密码、端口及网络可达")
+			return nil, connectionCause(e, "SOCKS5 连接或认证失败，请确认用户名、密码、端口及网络可达")
 		}
 		return c, nil
 	}
@@ -49,7 +59,7 @@ func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 		c, e = d.DialContext(ctx, "tcp", p.Address())
 	}
 	if e != nil {
-		return nil, connectionError("代理网关连接失败，请确认协议、端口及海外网络连接；HTTPS 选项仅用于网关本身提供 TLS 的代理")
+		return nil, connectionCause(e, "代理网关连接失败，请确认协议、端口及海外网络连接；HTTPS 选项仅用于网关本身提供 TLS 的代理")
 	}
 	deadline := time.Now().Add(12 * time.Second)
 	if end, ok := ctx.Deadline(); ok && end.Before(deadline) {
@@ -64,13 +74,13 @@ func Dial(ctx context.Context, p model.Proxy, target string) (net.Conn, error) {
 	}
 	if e = req.Write(c); e != nil {
 		c.Close()
-		return nil, connectionError("代理握手发送失败，连接已中断")
+		return nil, connectionCause(e, "代理握手发送失败，连接已中断")
 	}
 	r := bufio.NewReader(c)
 	resp, e := http.ReadResponse(r, req)
 	if e != nil {
 		c.Close()
-		return nil, connectionError("代理未返回有效 HTTP 握手，请确认是否应选择 SOCKS5 协议")
+		return nil, connectionCause(e, "代理未返回有效 HTTP 握手，请确认是否应选择 SOCKS5 协议")
 	}
 	if resp.StatusCode != 200 {
 		c.Close()

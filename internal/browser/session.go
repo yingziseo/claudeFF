@@ -17,7 +17,7 @@ import (
 
 // Chromium's own Sessions store keeps navigation history, tab groups and form state.
 // The private URL checkpoint additionally handles browser crashes and the changing
-// local information-page port. It never stores page contents or authentication data.
+// local information-page port. It stores URLs privately, never extracts page contents.
 type session struct {
 	Tabs []string `json:"tabs"`
 	Home string   `json:"home"`
@@ -43,6 +43,12 @@ func (m *Manager) restoreTabs(ctx context.Context, home string) error {
 	if e := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error { var e error; infos, e = target.GetTargets().Do(c); return e })); e != nil {
 		return e
 	}
+	controlBlank := false
+	for _, t := range infos {
+		if t.TargetID == chromedp.FromContext(ctx).Target.TargetID && (t.URL == "about:blank" || t.URL == "") {
+			controlBlank = true
+		}
+	}
 	restored, hasHome := 0, false
 	for _, t := range infos {
 		if t.Type != "page" {
@@ -51,6 +57,10 @@ func (m *Manager) restoreTabs(ctx context.Context, home string) error {
 		if previous.Home != "" && t.URL == previous.Home {
 			if t.TargetID == chromedp.FromContext(ctx).Target.TargetID {
 				if e := chromedp.Run(ctx, chromedp.Navigate(home)); e != nil {
+					return e
+				}
+			} else if controlBlank {
+				if e := chromedp.Run(ctx, chromedp.Navigate(home), chromedp.ActionFunc(func(c context.Context) error { return target.CloseTarget(t.TargetID).Do(c) })); e != nil {
 					return e
 				}
 			} else {
