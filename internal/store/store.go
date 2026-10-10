@@ -1,0 +1,139 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/yingziseo/claudeFF/internal/model"
+	_ "modernc.org/sqlite"
+)
+
+type Protector interface {
+	Protect([]byte) ([]byte, error)
+	Unprotect([]byte) ([]byte, error)
+}
+type Store struct {
+	mu        sync.Mutex
+	db        *sql.DB
+	protector Protector
+}
+
+func Open(dir string, p Protector) (*Store, error) {
+	if e := os.MkdirAll(dir, 0700); e != nil {
+		return nil, e
+	}
+	db, e := sql.Open("sqlite", filepath.Join(dir, "workspace.db"))
+	if e != nil {
+		return nil, e
+	}
+	db.SetMaxOpenConns(1)
+	if _, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+ CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), proxy BLOB NOT NULL, secret BLOB, revision INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS profile (id INTEGER PRIMARY KEY CHECK(id=1), value BLOB NOT NULL);
+ PRAGMA user_version=1;`); e != nil {
+		db.Close()
+		return nil, e
+	}
+	return &Store{db: db, protector: p}, nil
+}
+func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Proxy() (model.Proxy, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var raw, enc []byte
+	var rev int
+	e := s.db.QueryRow("SELECT proxy,secret,revision FROM settings WHERE id=1").Scan(&raw, &enc, &rev)
+	if errors.Is(e, sql.ErrNoRows) {
+		return model.Proxy{Protocol: "http"}, 0, nil
+	}
+	if e != nil {
+		return model.Proxy{}, 0, e
+	}
+	var p model.Proxy
+	if e = json.Unmarshal(raw, &p); e != nil {
+		return p, rev, e
+	}
+	if len(enc) > 0 {
+		b, e := s.protector.Unprotect(enc)
+		if e != nil {
+			return p, rev, errors.New("无法解密代理秘密，请在原 Windows 用户下运行或重新配置")
+		}
+		p.Password = string(b)
+	}
+	return p, rev, nil
+}
+func (s *Store) SaveProxy(p model.Proxy) (int, error) {
+	if e := p.Validate(); e != nil {
+		return 0, e
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var enc []byte
+	var e error
+	if p.Password != "" {
+		enc, e = s.protector.Protect([]byte(p.Password))
+		if e != nil {
+			return 0, e
+		}
+	}
+	raw, e := json.Marshal(p.Public())
+	if e != nil {
+		return 0, e
+	}
+	var rev int
+	if e = s.db.QueryRow(`INSERT INTO settings(id,proxy,secret,revision) VALUES(1,?,?,1)
+ ON CONFLICT(id) DO UPDATE SET proxy=excluded.proxy,secret=excluded.secret,revision=settings.revision+1 RETURNING revision`, raw, enc).Scan(&rev); e != nil {
+		return 0, e
+	}
+	return rev, nil
+}
+func (s *Store) Profile() (*model.Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var raw []byte
+	e := s.db.QueryRow("SELECT value FROM profile WHERE id=1").Scan(&raw)
+	if errors.Is(e, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if e != nil {
+		return nil, e
+	}
+	var p model.Profile
+	e = json.Unmarshal(raw, &p)
+	return &p, e
+}
+func (s *Store) EnsureProfile(source string) (*model.Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := model.NewProfile(source)
+	raw, e := json.Marshal(p)
+	if e != nil {
+		return nil, e
+	}
+	if _, e = s.db.Exec("INSERT OR IGNORE INTO profile(id,value) VALUES(1,?)", raw); e != nil {
+		return nil, e
+	}
+	e = s.db.QueryRow("SELECT value FROM profile WHERE id=1").Scan(&raw)
+	if e != nil {
+		return nil, e
+	}
+	e = json.Unmarshal(raw, &p)
+	return &p, e
+}
+func (s *Store) SaveProfile(p model.Profile) error {
+	if e := p.Validate(); e != nil {
+		return e
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, e := json.Marshal(p)
+	if e != nil {
+		return e
+	}
+	_, e = s.db.Exec("UPDATE profile SET value=? WHERE id=1", raw)
+	return e
+}

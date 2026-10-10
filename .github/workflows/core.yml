@@ -1,0 +1,36 @@
+name: Core validation
+on:
+  push:
+    branches: [main]
+    paths: ['internal/**', 'cmd/**', 'scripts/**', 'go.*', '.github/workflows/core.yml']
+  pull_request:
+    paths: ['internal/**', 'cmd/**', 'scripts/**', 'go.*', '.github/workflows/core.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: core-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Resolve initial module lock in cloud
+        run: go mod tidy
+      - name: Format and test core
+        run: |
+          test -z "$(gofmt -l internal cmd)"
+          go test -race ./internal/...
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: go-module-lock
+          path: |
+            go.mod
+            go.sum
