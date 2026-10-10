@@ -2,11 +2,11 @@
 
 Windows 11 x64 个人 Claude 工作空间：**一个账号、一份稳定环境配置、一份全局代理**。Claude.ai 使用独立指纹 Chromium，Claude Code 使用专用 WSL2 整进程隔离；Claude 桌面客户端保留“正在开发中”入口。
 
-新版界面、Windows 核心及后期授权服务已实现，正在交付开发体验版。Windows/WSL2 真实安装、用户代理及官方账号体验由用户实机验证；生产授权服务未部署，当前 ZIP 保留开发登录。
+新版界面、Windows 核心及后期授权服务已实现，已发布 v0.2.0-dev.1 开发体验版。Windows/WSL2 真实安装、用户代理及官方账号体验由用户实机验证；生产授权服务未部署，当前 ZIP 保留开发登录。
 
 - [客户端界面预览](https://yingziseo.github.io/claudeFF/)：新版单账号界面，连接、安装和终端为明确标记的示例。
 - [卡密和用户管理面板预览](https://yingziseo.github.io/claudeFF/#admin)：示例管理界面。
-- [Windows ZIP 与授权服务开发产物](https://github.com/yingziseo/claudeFF/releases)：解压运行说明随包提供。
+- [Windows ZIP 与授权服务开发产物](https://github.com/yingziseo/claudeFF/releases/tag/v0.2.0-dev.1)：解压运行说明随包提供。
 - [开发进度与验证报告](docs/开发进度与验证报告.md)：具体通过证据与实机待测项。
 
 ## 当前功能
