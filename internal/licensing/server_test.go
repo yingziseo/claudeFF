@@ -125,3 +125,37 @@ func TestSessionExpiryAndLogout(t *testing.T) {
 		t.Fatal("expired session accepted")
 	}
 }
+func TestAdminPaginationAndSearch(t *testing.T) {
+	admin := strings.Repeat("fixture-admin", 3)
+	s, e := Open(filepath.Join(t.TempDir(), "license.db"), admin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.DB.Close()
+	tx, _ := s.DB.Begin()
+	for i := 0; i < 105; i++ {
+		_, e = tx.Exec("INSERT INTO cards(hash,label,created) VALUES(?,?,?)", random(16), "批量测试", time.Now().UTC().Format(time.RFC3339))
+		if e != nil {
+			t.Fatal(e)
+		}
+	}
+	tx.Commit()
+	query := func(path string) []map[string]any {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+admin)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatal(w.Body.String())
+		}
+		var items []map[string]any
+		json.Unmarshal(w.Body.Bytes(), &items)
+		return items
+	}
+	if len(query("/v1/admin/cards")) != 100 || len(query("/v1/admin/cards?offset=100")) != 5 {
+		t.Fatal("pagination lost data")
+	}
+	if len(query("/v1/admin/cards?q=absent")) != 0 {
+		t.Fatal("search not applied to database")
+	}
+}

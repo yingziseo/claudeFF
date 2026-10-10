@@ -31,6 +31,8 @@ jobs:
       - run: go mod tidy
       - run: go test -race ./internal/licensing
       - run: go build -trimpath -o build/license-server ./cmd/license-server
+        env:
+          CGO_ENABLED: '0'
       - run: npm ci
         working-directory: frontend
       - run: npm run build

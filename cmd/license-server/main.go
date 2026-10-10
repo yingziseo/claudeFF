@@ -55,7 +55,9 @@ func limited(next http.Handler) http.Handler {
 			defer func() { <-slots }()
 			next.ServeHTTP(w, r)
 		default:
-			http.Error(w, "请稍后重试", http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":"服务忙，请稍后重试"}`))
 		}
 	})
 }

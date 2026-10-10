@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 	_ "modernc.org/sqlite"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -236,6 +237,22 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"authorized": true, "username": name, "serverTime": now, "permanent": true})
 }
 func (s *Server) admin(w http.ResponseWriter, r *http.Request) {
+	offset := 0
+	var e error
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		offset, e = strconv.Atoi(raw)
+		if e != nil || offset < 0 || offset > 10000000 {
+			fail(w, 400, "分页参数无效")
+			return
+		}
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(query) > 120 {
+		fail(w, 400, "查询条件过长")
+		return
+	}
+	pattern := "%" + query + "%"
+
 	switch {
 	case r.Method == "POST" && r.URL.Path == "/v1/admin/cards":
 		var p struct{ Label string }
@@ -256,7 +273,7 @@ func (s *Server) admin(w http.ResponseWriter, r *http.Request) {
 		s.DB.Exec("INSERT INTO audit(action,subject,created) VALUES(?,?,?)", "card.create", id, s.Now().UTC().Format(time.RFC3339))
 		write(w, 201, map[string]any{"id": id, "card": key, "label": p.Label})
 	case r.Method == "GET" && r.URL.Path == "/v1/admin/cards":
-		rows, e := s.DB.Query("SELECT c.id,c.label,c.created,c.revoked,COALESCE(u.username,'') FROM cards c LEFT JOIN users u ON c.user_id=u.id ORDER BY c.id DESC LIMIT 500")
+		rows, e := s.DB.Query("SELECT c.id,c.label,c.created,c.revoked,COALESCE(u.username,'') FROM cards c LEFT JOIN users u ON c.user_id=u.id WHERE c.label LIKE ? OR COALESCE(u.username,'') LIKE ? ORDER BY c.id DESC LIMIT 100 OFFSET ?", pattern, pattern, offset)
 		if e != nil {
 			fail(w, 503, "查询失败")
 			return
@@ -291,7 +308,7 @@ func (s *Server) admin(w http.ResponseWriter, r *http.Request) {
 		s.DB.Exec("INSERT INTO audit(action,subject,created) VALUES(?,?,?)", "card.revoke", p.ID, s.Now().UTC().Format(time.RFC3339))
 		write(w, 200, map[string]bool{"ok": true})
 	case r.Method == "GET" && r.URL.Path == "/v1/admin/users":
-		rows, e := s.DB.Query("SELECT u.id,u.username,u.created,COALESCE(u.last_seen,''),COALESCE(u.version,''),u.browser_running,u.code_running,c.revoked,c.id FROM users u JOIN cards c ON c.user_id=u.id ORDER BY u.id DESC LIMIT 500")
+		rows, e := s.DB.Query("SELECT u.id,u.username,u.created,COALESCE(u.last_seen,''),COALESCE(u.version,''),u.browser_running,u.code_running,c.revoked,c.id FROM users u JOIN cards c ON c.user_id=u.id WHERE u.username LIKE ? ORDER BY u.id DESC LIMIT 100 OFFSET ?", pattern, offset)
 		if e != nil {
 			fail(w, 503, "查询失败")
 			return
