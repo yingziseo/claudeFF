@@ -479,12 +479,18 @@ func (a *App) licenseMonitor() {
 				a.authMu.Unlock()
 				continue
 			}
+			client := *a.license
+			a.authMu.Unlock()
 			bs, _ := a.browser.State()
 			cs := a.code.State()
-			e := a.license.Verify(a.ctx, bs.Phase == "running", cs.Phase == "running")
-			a.licensed = e == nil
+			e := client.Verify(a.ctx, bs.Phase == "running", cs.Phase == "running")
+			a.authMu.Lock()
+			same := a.license != nil && a.license.Token == client.Token
+			if same {
+				a.licensed = e == nil
+			}
 			a.authMu.Unlock()
-			if e != nil {
+			if same && e != nil {
 				a.browser.Stop()
 				a.code.Stop()
 			}

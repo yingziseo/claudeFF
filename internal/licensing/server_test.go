@@ -3,7 +3,6 @@ package licensing
 import (
 	"bytes"
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"

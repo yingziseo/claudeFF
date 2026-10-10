@@ -74,3 +74,9 @@ test('管理面板预览支持生成、查询和撤销示例', async ({ page }, 
  await page.getByLabel('搜索卡密或用户').fill(''); await page.getByRole('button', { name: '用户', exact: true }).click(); await expect(page.getByText('体验用户', { exact: true })).toBeVisible()
  await page.screenshot({ path: info.outputPath('admin-users-preview.png'), fullPage: true })
 })
+
+test('常见桌面高度可直接看到两个主操作，弹窗键盘可退出', async ({ page }) => {
+ await page.setViewportSize({ width: 1280, height: 800 }); await page.goto('./')
+ for(const name of ['打开 Claude.ai', '安装并设置']) { const box = await page.getByRole('button', { name, exact: true }).boundingBox(); expect(box).not.toBeNull(); expect(box!.y + box!.height).toBeLessThan(800) }
+ await page.getByRole('button', { name: '查看指纹信息' }).click(); await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).not.toBeVisible()
+})
