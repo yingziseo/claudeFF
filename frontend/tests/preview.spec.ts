@@ -80,3 +80,11 @@ test('常见桌面高度可直接看到两个主操作，弹窗键盘可退出',
  for(const name of ['打开 Claude.ai', '安装并设置']) { const box = await page.getByRole('button', { name, exact: true }).boundingBox(); expect(box).not.toBeNull(); expect(box!.y + box!.height).toBeLessThan(800) }
  await page.getByRole('button', { name: '查看指纹信息' }).click(); await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).not.toBeVisible()
 })
+
+test('窄屏导航保持文字含义，键盘跳转与减少动画', async ({ page }) => {
+ await page.setViewportSize({ width: 375, height: 812 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await page.goto('./')
+ await expect(page.getByRole('button', { name: 'Claude Code', exact: true }).locator('span')).toBeVisible()
+ await page.keyboard.press('Tab'); await expect(page.getByRole('link', { name: '跳到主要内容' })).toBeFocused()
+ await page.keyboard.press('Enter'); await expect(page.locator('#workspace-main')).toBeFocused()
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
