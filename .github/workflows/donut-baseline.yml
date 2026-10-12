@@ -1,0 +1,86 @@
+name: Donut native baseline
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: donut-baseline-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  official-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Fetch pinned original portable release
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://github.com/zhom/donutbrowser/releases/download/v0.33.0/Donut_0.33.0_x64-portable.zip' -OutFile "$env:RUNNER_TEMP/donut.zip"
+          $hash = (Get-FileHash "$env:RUNNER_TEMP/donut.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne 'eb762a0137c129c3103959055f6336671faf7c40daa094fb692cc6596f13f676') { throw 'Upstream release checksum mismatch' }
+          Expand-Archive "$env:RUNNER_TEMP/donut.zip" "$env:RUNNER_TEMP/donut-original"
+          $exe = Get-ChildItem "$env:RUNNER_TEMP/donut-original" -Filter Donut.exe -Recurse | Select-Object -First 1
+          if (-not $exe) { throw 'Original executable missing' }
+          "DONUT_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+      - name: Actual native lifecycle, proxy and session acceptance
+        run: node verification/donut/native-baseline.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donut-original-windows-evidence
+          path: donut-evidence/
+          retention-days: 14
+  source-windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: desktop/package.json
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: desktop/.node-version
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Build actual upstream proxy worker
+        working-directory: desktop/src-tauri
+        run: cargo build --locked --bin donut-proxy --release
+      - run: pnpm copy-proxy-binary:release
+      - run: node src-tauri/download-xray.mjs --target x86_64-pc-windows-msvc
+      - name: Compile full upstream client
+        run: pnpm tauri build --no-bundle
+      - name: Package source baseline (not a product release)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory baseline-package -Force | Out-Null
+          Copy-Item src-tauri/target/release/donutbrowser.exe baseline-package/Donut.exe
+          Copy-Item src-tauri/target/release/donut-proxy.exe baseline-package/
+          Copy-Item src-tauri/binaries/xray-x86_64-pc-windows-msvc.exe baseline-package/xray.exe
+          Copy-Item LICENSE baseline-package/
+          Copy-Item UPSTREAM.json baseline-package/
+          New-Item baseline-package/.portable -ItemType File | Out-Null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: donut-source-baseline-not-product
+          path: desktop/baseline-package/
+          retention-days: 14
