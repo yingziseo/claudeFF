@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -19,9 +20,12 @@ func bufReader(c net.Conn) *bufio.Reader { return bufio.NewReader(c) }
 const DetectionURL = "https://api.ipify.org?format=json"
 
 func DetectionEndpoints() []string {
-	return []string{DetectionURL, "https://api64.ipify.org?format=json", "https://ipinfo.io/json"}
+	return []string{DetectionURL, "https://checkip.amazonaws.com", "https://icanhazip.com", "https://ipinfo.io/ip", "https://ifconfig.co/ip"}
 }
 func DecodeIP(data []byte) (string, error) {
+	if ip := net.ParseIP(strings.TrimSpace(string(data))); ip != nil {
+		return ip.String(), nil
+	}
 	var result struct {
 		IP string `json:"ip"`
 	}
@@ -56,6 +60,8 @@ func Detect(ctx context.Context, p model.Proxy, rev int) (*model.Observation, er
 	return o, nil
 }
 func DetectAcross(ctx context.Context, c *http.Client, endpoints []string, rev int) (*model.Observation, error) {
+	ctx, stop := context.WithTimeout(ctx, 30*time.Second)
+	defer stop()
 	var last error
 	for _, endpoint := range endpoints {
 		if ctx.Err() != nil {
@@ -93,6 +99,9 @@ func DetectWith(ctx context.Context, c *http.Client, endpoint string, rev int) (
 		return nil, errors.New("检测请求或目标 TLS 连接失败；请确认代理协议、端口及海外网络连接")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusProxyAuthRequired {
+		return nil, connectionError("代理认证失败（407），请检查用户名和密码")
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("出口检测站返回 HTTP %d，已尝试代理内备用地址", resp.StatusCode)
 	}

@@ -147,9 +147,11 @@ func (m *Manager) Start(parent context.Context, relay string, expected *model.Ob
 	check, done := context.WithTimeout(parent, 30*time.Second)
 	defer done()
 	o, e := proxy.DetectAcross(check, proxy.ClientThrough(relay), proxy.DetectionEndpoints(), expected.Revision)
-	if e != nil || o.IP != expected.IP {
-		return errors.New("Code 代理出口检测失败或已变化，请重新检测")
+	if e != nil {
+		return errors.New("Code 代理出口暂时无法确认，请重试检测")
 	}
+	// A gateway may rotate its exit between requests. Keep the actual observation
+	// instead of rejecting a working route because an earlier probe used another IP.
 	ctx, cancel := context.WithCancel(parent)
 	term, e := startConsole(exe, m.project, managedEnv(relay))
 	if e != nil {

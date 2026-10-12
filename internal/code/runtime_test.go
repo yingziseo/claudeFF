@@ -85,6 +85,9 @@ func TestOfficialNativeInstallAndTerminal(t *testing.T) {
 	if e = m.ChooseProject(project); e != nil {
 		t.Fatal(e)
 	}
+	// The previous observation may differ on a rotating gateway; actual relay
+	// reachability must still allow the official native terminal to start.
+	obs.IP = "203.0.113.99"
 	if e = m.Start(ctx, relay.URL(), obs); e != nil {
 		t.Fatal(e)
 	}
