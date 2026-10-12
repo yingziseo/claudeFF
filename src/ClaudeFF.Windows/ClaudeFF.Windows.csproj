@@ -1,1 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><AssemblyName>PrivacyPlatform</AssemblyName></PropertyGroup><ItemGroup><ProjectReference Include="../ClaudeFF.Core/ClaudeFF.Core.csproj" /></ItemGroup></Project>
