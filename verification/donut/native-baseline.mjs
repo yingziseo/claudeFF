@@ -44,8 +44,8 @@ proxy.on('connect',(req,socket,head)=>{
  authenticatedConnections++;
  const dest=new URL('http://'+req.url);
  // The fault phase disables public probe access, while the local browser fixture remains usable.
- if(rejectProbes){socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n');return}
- const upstream=track(net.connect(Number(dest.port),dest.hostname));
+ if(rejectProbes&&dest.hostname!=='claudeff-ci.test'){socket.end('HTTP/1.1 503 Service Unavailable\r\n\r\n');return}
+ const upstream=track(net.connect(dest.hostname==='claudeff-ci.test'?fixture.address().port:Number(dest.port),dest.hostname==='claudeff-ci.test'?'127.0.0.1':dest.hostname));
  upstream.on('connect',()=>{socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');if(head.length)upstream.write(head);socket.pipe(upstream);upstream.pipe(socket)});
  upstream.on('error',()=>socket.destroy());socket.on('close',()=>upstream.destroy());upstream.on('close',()=>socket.destroy());
 });
@@ -55,6 +55,10 @@ const settings={proxy_type:'http',host:'127.0.0.1',port:proxy.address().port,use
 const report={upstream:'zhom/donutbrowser',tag:'v0.33.0',kind:process.env.DONUT_BASELINE_KIND||'official-release',stage:'start',checks:[],claudeAccountLogin:'not tested',residentialProxy:'not tested',socks5:'not tested',bookmarksAndPasswordFill:'not tested'};
 const record=(name,data={})=>{report.checks.push({name,...data});fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(report,null,2));console.log('PASS '+name)};
 let app,webview,page,profile,invoke;
+const policyPath='HKLM:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments';
+const policyName=path.basename(exe);
+const policy=spawnSync('powershell.exe',['-NoProfile','-Command',`New-Item -Path '${policyPath}' -Force | Out-Null; New-ItemProperty -Path '${policyPath}' -Name '${policyName}' -Value '--remote-debugging-port=9225 --remote-debugging-address=127.0.0.1' -PropertyType String -Force | Out-Null`],{encoding:'utf8',windowsHide:true});
+if(policy.status!==0)throw Error('Cannot configure test WebView debugging policy');
 const root=path.join(process.env.RUNNER_TEMP,'donut-baseline-state');fs.mkdirSync(root,{recursive:true});
 const alive=pid=>{try{process.kill(pid,0);return true}catch{return false}};
 const until=async(fn,ms=60000)=>{const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(500)}throw Error('Timeout at '+report.stage)};
@@ -107,11 +111,14 @@ try{
  await page.screenshot({path:path.join(output,'original-client.png'),fullPage:true});
  report.stage='complete';report.success=true;
 }catch(e){report.success=false;report.error=String(e).split(password).join('[redacted]').slice(0,5000);console.error('FAIL '+report.stage+': '+report.error);process.exitCode=1;
+ if(app?.pid){const diagnostic=spawnSync('powershell.exe',['-NoProfile','-File','frontend/tests/desktop-diagnose.ps1','-TaskProcessId',String(app.pid)],{encoding:'utf8',windowsHide:true,timeout:15000});report.desktop=String(diagnostic.stdout||diagnostic.stderr).split(password).join('[redacted]').slice(-10000)}
+ if(fs.existsSync(path.join(root,'logs'))){report.logs=fs.readdirSync(path.join(root,'logs')).filter(n=>n.endsWith('.log')).map(n=>fs.readFileSync(path.join(root,'logs',n),'utf8').split(password).join('[redacted]').slice(-10000)).join('\n')}
  if(page)await page.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});
 }finally{
  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(report,null,2));
  if(profile?.process_id&&invoke)await invoke('kill_browser_profile',{profile}).catch(()=>{});
  if(webview)await webview.close().catch(()=>{});
  if(app?.pid)spawnSync('taskkill',['/PID',String(app.pid),'/T','/F'],{stdio:'ignore'});
+ spawnSync('powershell.exe',['-NoProfile','-Command',`Remove-ItemProperty -Path '${policyPath}' -Name '${policyName}' -ErrorAction SilentlyContinue`],{stdio:'ignore',windowsHide:true});
  for(const s of sockets)s.destroy();proxy.closeAllConnections();proxy.close();fixture.closeAllConnections();fixture.close();
 }

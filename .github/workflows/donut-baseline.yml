@@ -1,10 +1,15 @@
 name: Donut native baseline
 on:
   workflow_dispatch:
+    inputs:
+      source_build:
+        description: Also build the full upstream source
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
-  group: donut-baseline-${{ github.ref }}
+  group: donut-baseline-${{ github.ref }}-${{ inputs.source_build }}
   cancel-in-progress: true
 jobs:
   official-windows:
@@ -38,6 +43,7 @@ jobs:
           path: donut-evidence/
           retention-days: 14
   source-windows:
+    if: inputs.source_build
     runs-on: windows-latest
     timeout-minutes: 90
     defaults:
