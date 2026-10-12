@@ -16,7 +16,7 @@ internal static class Theme
         };
         foreach(var (name,color) in colors)r[name]=new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
         var control=new Style(typeof(Control));control.Setters.Add(new Setter(Control.FontFamilyProperty,new FontFamily("Segoe UI, Microsoft YaHei UI")));control.Setters.Add(new Setter(Control.FontSizeProperty,14d));control.Setters.Add(new Setter(Control.ForegroundProperty,r["Text"]));r[typeof(Control)]=control;
-        var text=new Style(typeof(TextBlock));text.Setters.Add(new Setter(TextBlock.ForegroundProperty,r["Text"]));text.Setters.Add(new Setter(TextBlock.FontSizeProperty,14d));text.Setters.Add(new Setter(TextBlock.TextWrappingProperty,TextWrapping.Wrap));r[typeof(TextBlock)]=text;
+        var text=new Style(typeof(TextBlock));text.Setters.Add(new Setter(TextBlock.FontSizeProperty,14d));text.Setters.Add(new Setter(TextBlock.TextWrappingProperty,TextWrapping.Wrap));r[typeof(TextBlock)]=text;
         foreach(var type in new[]{typeof(TextBox),typeof(PasswordBox),typeof(ListBox)})
         {
             var style=new Style(type,control);style.Setters.Add(new Setter(Control.BackgroundProperty,r["Panel"]));style.Setters.Add(new Setter(Control.BorderBrushProperty,r["Line"]));style.Setters.Add(new Setter(Control.PaddingProperty,new Thickness(10,8,10,8)));if(type!=typeof(ListBox))style.Setters.Add(new Setter(Control.TemplateProperty,System.Windows.Markup.XamlReader.Parse("""

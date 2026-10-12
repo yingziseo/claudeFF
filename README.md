@@ -33,15 +33,11 @@
 
 ## 构建与测试
 
-要求 .NET 10 SDK；Windows 目标可在 Linux 上交叉编译。
+本项目使用 C# / .NET 10 / WPF，必须编译并发布为 Windows 可执行程序。按 [AGENTS.md](AGENTS.md)，构建、打包、测试与依赖处理全部在 GitHub Actions 执行；当前服务器只编辑代码和查询云端结果。
 
-```bash
-dotnet build ClaudeFF.sln -c Release
-dotnet run --project tests/ClaudeFF.Tests -c Release
-./scripts/package.sh
-```
+推送相关改动会触发 `.github/workflows/windows-build.yml`，也支持在 GitHub 页面手动运行。Windows 云端直接启动发布的 `ClaudePrivacy.exe`，检查深浅主题、四个页面和原生窗口，并保留截图与启动日志。启动验证失败时不会上传交付包。
 
-Windows 打包：`./scripts/package.ps1`。CI 提供 Windows 编译及公共逻辑测试，不会自动登录 Claude，也不能代替真实驱动测试。
+云端 Windows Server 运行器不能代替用户 Windows 10、Sandboxie 驱动或 Claude 正常使用的实机验收。
 
 目录：
 

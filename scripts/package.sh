@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+  echo "AGENTS.md requires building and packaging in GitHub Actions."
+  exit 1
+fi
 cd "$(dirname "$0")/.."
 DOTNET_BIN="${DOTNET_BIN:-dotnet}"
 "$DOTNET_BIN" run --project tests/ClaudeFF.Tests -c Release

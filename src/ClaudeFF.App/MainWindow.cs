@@ -40,19 +40,29 @@ public sealed class MainWindow:Window
             settings.LightTheme=theme==1;Build();
             for(int i=0;i<labels.Length;i++)
             {
-                selectedPage=i;RenderPage();ExpandAll(page);
+                selectedPage=i;RenderPage();
+                if(i==0)
+                {
+                    await Dispatcher.InvokeAsync(UpdateLayout,System.Windows.Threading.DispatcherPriority.Render);await Task.Delay(180);
+                    SaveScreenshot(output,(settings.LightTheme?"light":"dark")+"-home-default.png");
+                }
+                ExpandAll(page);
                 await Dispatcher.InvokeAsync(UpdateLayout,System.Windows.Threading.DispatcherPriority.Render);
                 await Task.Delay(180);
                 var handle=new System.Windows.Interop.WindowInteropHelper(this).Handle;
                 if(!IsVisible||handle==IntPtr.Zero||ActualWidth<900||ActualHeight<660)throw new InvalidOperationException("未创建可见的原生主窗口。");
                 var name=(settings.LightTheme?"light":"dark")+"-page-"+i+".png";
-                var target=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(layout.ActualWidth),(int)Math.Ceiling(layout.ActualHeight),96,96,PixelFormats.Pbgra32);
-                target.Render(layout);var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(target));
-                using(var stream=File.Create(Path.Combine(output,name)))encoder.Save(stream);
+                SaveScreenshot(output,name);
                 results.Add(new{Theme=settings.LightTheme?"light":"dark",Page=labels[i],WindowHandle=handle.ToInt64(),Visible=IsVisible,Width=ActualWidth,Height=ActualHeight,Screenshot=name});
             }
         }
         Json.Write(Path.Combine(output,"ui-result.json"),new{Success=true,Pid=Environment.ProcessId,OS=Environment.OSVersion.ToString(),Architecture=System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),Checks=results});
+    }
+    private void SaveScreenshot(string output,string name)
+    {
+        var target=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(layout.ActualWidth),(int)Math.Ceiling(layout.ActualHeight),96,96,PixelFormats.Pbgra32);
+        target.Render(layout);var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(target));
+        using var stream=File.Create(Path.Combine(output,name));encoder.Save(stream);
     }
     private static void ExpandAll(System.Windows.DependencyObject root)
     {
@@ -70,7 +80,7 @@ public sealed class MainWindow:Window
     private void Build()
     {
         Theme.Apply(settings.LightTheme);Background=Brush("Bg");Foreground=Brush("Text");
-        layout=new Grid();Content=layout;
+        layout=new Grid{Background=Brush("Bg")};Content=layout;
         layout.ColumnDefinitions.Add(new(){Width=new GridLength(204)});layout.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});
         var side=new DockPanel{Margin=new Thickness(14,28,14,18)};
         var sideBorder=new Border{Background=Brush("Sidebar"),BorderBrush=Brush("Line"),BorderThickness=new Thickness(0,0,1,0),Child=side};layout.Children.Add(sideBorder);
