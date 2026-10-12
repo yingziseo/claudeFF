@@ -63,8 +63,7 @@ const root=path.join(process.env.RUNNER_TEMP,'donut-baseline-state');fs.mkdirSyn
 const alive=pid=>{try{process.kill(pid,0);return true}catch{return false}};
 const until=async(fn,ms=60000)=>{const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(500)}throw Error('Timeout at '+report.stage)};
 try{
- const env={...process.env,DONUTBROWSER_DATA_ROOT:root,APPDATA:path.join(root,'appdata'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=9225 --remote-debugging-address=127.0.0.1'};
- fs.mkdirSync(env.APPDATA,{recursive:true});
+ const env={...process.env,DONUTBROWSER_DATA_ROOT:root,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=9225 --remote-debugging-address=127.0.0.1'};
  app=spawn(exe,[],{cwd:path.dirname(exe),env,stdio:'ignore'});
  await until(async()=>{try{webview=await chromium.connectOverCDP('http://127.0.0.1:9225');return true}catch{return false}});
  await until(async()=>{page=webview.contexts()[0].pages().find(p=>!p.url().startsWith('devtools:'));return page&&await page.evaluate(()=>Boolean(window.__TAURI_INTERNALS__?.invoke))});
