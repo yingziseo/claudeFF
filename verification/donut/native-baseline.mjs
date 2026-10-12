@@ -73,7 +73,8 @@ try{
  report.stage='download engine in cloud';
  const versions=await invoke('fetch_browser_versions_cached_first',{browserStr:'wayfern'});assert(versions.length);
  report.engineVersion=versions[0].version;
- await invoke('download_browser',{browserStr:'wayfern',version:report.engineVersion});
+ try{await invoke('download_browser',{browserStr:'wayfern',version:report.engineVersion})}catch(e){if(!String(e).includes('already being downloaded'))throw e}
+ await until(async()=> (await invoke('get_downloaded_browser_versions',{browserStr:'wayfern'})).includes(report.engineVersion),600000);
  await invoke('accept_wayfern_terms');
  record('upstream engine download and normal terms acceptance',{version:report.engineVersion});
  report.stage='authenticated proxy';
